@@ -1,5 +1,5 @@
 #!/bin/bash
-# 斐讯 N1 (Amlogic S905D) ImmortalWrt 25.12.x 极致纯净版构建脚本 (apk 软件体系)
+# 斐讯 N1 (Amlogic S905D) ImmortalWrt 25.12.x 极致纯净版构建脚本
 source shell/apk-custom-packages.sh
 
 LOGFILE="/tmp/uci-defaults-log.txt"
@@ -28,25 +28,43 @@ fi
 PACKAGES="$PACKAGES kmod-brcmfmac wpad-basic-mbedtls iw iwinfo"
 
 # ============= 晶晨宝盒及依赖 =============
-# 晶晨宝盒：N1 刷写 eMMC / 在线升级固件与内核的必备 GUI
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
-# 下载晶晨宝盒的 apk 文件（直接从 ophub 官方下载，不引入第三方杂乱仓库）
-echo "🔄 正在下载 晶晨宝盒 apk..."
-mkdir -p /home/build/immortalwrt/extra-packages/amlogic
-AMLOGIC_TAG="26.10.2002-js"
-AMLOGIC_URL="https://github.com/ophub/luci-app-amlogic/releases/download/${AMLOGIC_TAG}"
-AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
+# ============= 动态下载晶晨宝盒 apk =============
+echo "🔄 正在获取晶晨宝盒最新版本..."
+AMLOGIC_REPO="ophub/luci-app-amlogic"
+# 尝试通过 GitHub API 获取最新 Tag
+AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
-for apk in luci-app-amlogic-26.10.2002-r2.apk luci-i18n-amlogic-zh-cn-0.apk; do
-    if [ -f "$AMLOGIC_DIR/$apk" ]; then
-        echo "✅ 已存在 $apk"
-        continue
-    fi
-    wget -q "$AMLOGIC_URL/$apk" -P "$AMLOGIC_DIR/" || echo "❌ 下载 $apk 失败"
-done
+# 如果 API 获取失败（比如被限流），使用一个已知的较新备用版本
+if [ -z "$AMLOGIC_TAG" ]; then
+    echo "⚠️ 无法获取最新版本，使用备用版本..."
+    AMLOGIC_TAG="26.10.2002-js"
+fi
+echo "✅ 晶晨宝盒版本: ${AMLOGIC_TAG}"
+
+AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
+mkdir -p "$AMLOGIC_DIR"
+
+# 下载主程序 apk
+echo "📥 正在下载 luci-app-amlogic..."
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-app-amlogic-${AMLOGIC_TAG%-*}-r2.apk" -O "$AMLOGIC_DIR/luci-app-amlogic.apk" || \
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-app-amlogic-26.10.2002-r2.apk" -O "$AMLOGIC_DIR/luci-app-amlogic.apk" || \
+echo "❌ 下载主程序失败，请检查 Release 文件命名"
+
+# 下载中文语言包 apk
+echo "📥 正在下载中文语言包..."
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-i18n-amlogic-zh-cn-0.apk" -O "$AMLOGIC_DIR/luci-i18n-amlogic-zh-cn.apk" || \
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-i18n-amlogic-zh-cn.apk" -O "$AMLOGIC_DIR/luci-i18n-amlogic-zh-cn.apk" || \
+echo "❌ 下载语言包失败"
+
+# 检查是否成功下载
+if [ ! -s "$AMLOGIC_DIR/luci-app-amlogic.apk" ]; then
+    echo "❌ 致命错误：晶晨宝盒主程序未能下载，停止构建。"
+    exit 1
+fi
 ls -lh "$AMLOGIC_DIR"
 
 # 解压并拷贝 apk 到 packages 目录供 ImageBuilder 使用
