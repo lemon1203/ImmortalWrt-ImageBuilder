@@ -1,4 +1,5 @@
-name: Build 25.12.2 N1 (Postinst Fix)
+name: Build 25.12.2 N1 (APK Native Fix)
+
 on:
   workflow_dispatch:
     inputs:
@@ -68,16 +69,17 @@ jobs:
         if: ${{ github.event.inputs.enable_store == 'true' }}
         run: |
           echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/custom-packages.sh
+          echo "✅ 已追加 luci-app-store"
 
       - name: 处理是否替换 banner 信息
         if: ${{ github.event.inputs.skip_imagebuilder == 'false' && github.event.inputs.replace_banner == 'true' }}
         run: |
           cp n1/99-banner.sh files/etc/uci-defaults/
 
-      - name: Building N1 ImmortalWrt rootfs 25.12.2 (Postinst Fix)
+      - name: Building N1 ImmortalWrt rootfs 25.12.2 (APK Native Fix)
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs (绕过错误的 postinst 路径)"
+          echo "✅ 使用 ImageBuilder 构建 rootfs (应用 25.12 APK 原生修复)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -101,25 +103,27 @@ jobs:
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
-                # 1. 强制开启 APK 并关闭签名检查
+                # 1. 强制开启 APK 并关闭签名检查 (规避 opkg-key 报错)
                 grep -q 'CONFIG_USE_APK=y' .config || echo 'CONFIG_USE_APK=y' >> .config
                 sed -i '/CONFIG_SIGNED_PACKAGES/d' .config
                 echo '# CONFIG_SIGNED_PACKAGES is not set' >> .config
-                
-                # 2. 创建假的 opkg-key 防止脚本找不到文件报错
+
+                # 2. 创建假的 opkg-key 和 opkg 占位符，防止底层脚本找不到文件报错
                 mkdir -p scripts
-                printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
+                printf '#!/bin/sh\\nexit 0\\n' > scripts/opkg-key
                 chmod +x scripts/opkg-key
-                
-                # 3. 创建假的 opkg 防止调用报错
                 mkdir -p staging_dir/host/bin
-                printf '#!/bin/sh\nexit 0\n' > staging_dir/host/bin/opkg
+                printf '#!/bin/sh\\nexit 0\\n' > staging_dir/host/bin/opkg
                 chmod +x staging_dir/host/bin/opkg
-                
-                # 4. 核心修复：将 Makefile 中错误的 /usr/lib/opkg/info/*.postinst 路径替换为空操作
-                sed -i 's|/usr/lib/opkg/info/\*.postinst|/bin/true|g' Makefile
-                sed -i 's|usr/lib/opkg/info/\${pkgname}.postinst|/bin/true|g' Makefile
-                
+
+                # 3. 核心修复：将错误的 opkg postinst 路径替换为空操作 (/bin/true)
+                #    绕过 25.12 中 opkg 遗留路径导致的 'No such file or directory'
+                sed -i 's|/usr/lib/opkg/info/\\*.postinst|/bin/true|g' Makefile
+                sed -i 's|usr/lib/opkg/info/\\${pkgname}.postinst|/bin/true|g' Makefile
+
+                # 4. 参考上游修复，将 package_depends 中的 OPKG 调用替换为 APK
+                sed -i 's/\\$(OPKG) info --depends/\\$(APK) info --depends/g' Makefile
+
                 # 5. 执行构建
                 /bin/bash /home/build/immortalwrt/build.sh
               "
@@ -161,7 +165,7 @@ jobs:
           echo "Image file is: $FILE"
           FILENAME=$(basename "$FILE")
           echo "FILENAME=$FILENAME" >> $GITHUB_ENV
-          KERNEL_VERSION=$(echo "$FILENAME" | grep -oP 'k\d+\.\d+\.\d+')
+          KERNEL_VERSION=$(echo "$FILENAME" | grep -oP 'k\\d+\\.\\d+\\.\\d+')
           LUCI_VERSION="${{ github.event.inputs.luci_version }}"
 
           if [ -n "$PREBUILT_LUCI_VERSION" ]; then
