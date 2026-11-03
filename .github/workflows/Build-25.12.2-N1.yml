@@ -98,6 +98,7 @@ jobs:
 
             docker run --rm -i \
               --user root \
+              -w /home/build/immortalwrt \
               -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
               -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/immortalwrt/files/etc/uci-defaults" \
               -v "${{ github.workspace }}/arch/arch.conf:/home/build/immortalwrt/files/etc/opkg/arch.conf" \
@@ -108,7 +109,14 @@ jobs:
               -e PROFILE=$profile \
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
-              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
+              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
+                if [ ! -f scripts/opkg-key ]; then
+                  printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
+                  chmod +x scripts/opkg-key
+                  echo '已创建占位 opkg-key'
+                fi
+                /bin/bash /home/build/immortalwrt/build.sh
+              "
           done
 
       - name: Download prebuilt rootfs.tar.gz
