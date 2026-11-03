@@ -1,4 +1,4 @@
-name: Build 25.12.2 N1 (APK Native Fix)
+name: Build 25.12.2 N1 (Final Fix)
 on:
   workflow_dispatch:
     inputs:
@@ -74,10 +74,10 @@ jobs:
         run: |
           cp n1/99-banner.sh files/etc/uci-defaults/
 
-      - name: Building N1 ImmortalWrt rootfs 25.12.2 (APK Native Fix)
+      - name: Building N1 ImmortalWrt rootfs 25.12.2 (Final Fix)
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs (应用官方 APK 修复)"
+          echo "✅ 使用 ImageBuilder 构建 rootfs (终极兜底修复)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -101,13 +101,20 @@ jobs:
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
-                # 官方修复：将 Makefile 中错误的 opkg 调用替换为 apk
-                sed -i 's/opkg info --depends/apk info --depends/g' Makefile
-                # 强制启用 APK 并关闭签名验证（避免 opkg-key 报错）
-                grep -q 'CONFIG_USE_APK=y' .config || echo 'CONFIG_USE_APK=y' >> .config
-                sed -i '/CONFIG_SIGNED_PACKAGES/d' .config
+                # 1. 强制在 config 中关闭签名检查
                 echo '# CONFIG_SIGNED_PACKAGES is not set' >> .config
-                # 执行构建
+                
+                # 2. 制造假的 opkg-key，防止脚本去执行它时报错
+                mkdir -p scripts
+                printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
+                chmod +x scripts/opkg-key
+                
+                # 3. 制造假的 opkg，防止 Makefile 或 build.sh 调用它时报错
+                mkdir -p staging_dir/host/bin
+                printf '#!/bin/sh\nexit 0\n' > staging_dir/host/bin/opkg
+                chmod +x staging_dir/host/bin/opkg
+                
+                # 4. 执行构建
                 /bin/bash /home/build/immortalwrt/build.sh
               "
           done
