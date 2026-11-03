@@ -4,20 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       luci_version:
-        description: "选择luci版本 (仅25.12.2稳定可用)"
+        description: "选择luci版本 (仅25.12.2)"
         required: false
         default: "25.12.2"
         type: choice
         options:
           - 25.12.2
       openwrt_kernel:
-        description: "选择构建的内核(斐讯N1专用)"
+        description: "内核系列 (自动获取同系列最新)"
         required: false
         default: "6.18.y"
-        type: choice
-        options:
-          - 6.18.y
-          - 6.12.y
+        type: string
       include_docker:
         description: "是否编译 Docker 插件"
         required: true
@@ -46,7 +43,7 @@ on:
       builder_name:
         description: "设置打包作者的名称"
         required: true
-        default: 'LarryMKott'
+        default: 'wsrf'
 
 permissions:
   contents: write
@@ -57,40 +54,23 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/n1/build25.sh
-
-      - name: Debug workspace contents
-        run: ls -R
-
       - name: Enable Store integration
         run: |
           if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
             echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/apk-custom-packages.sh
-            echo "✅ 已追加 luci-app-store"
-          else
-            echo "❎ 未启用 luci-app-store"
           fi
-
       - name: 处理是否替换 banner 信息
         if: ${{ github.event.inputs.replace_banner == 'true' }}
-        run: |
-          cp n1/99-banner.sh files/etc/uci-defaults/
-
+        run: cp n1/99-banner.sh files/etc/uci-defaults/
       - name: Building N1 ImmortalWrt rootfs 25.12.x
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs (APK 原生模式)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
           luci_version="${{ github.event.inputs.luci_version }}"
-
-          IFS=',' read -r -a profile_array <<< "$profiles"
-
-          for profile in "${profile_array[@]}"; do
-            echo "Building for profile: $profile"
-
+          for profile in generic; do
             docker run --rm -i \
               --user root \
               -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
@@ -103,76 +83,59 @@ jobs:
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           done
-
-      - name: 查找rootfs.tar.gz所在路径
+          
+      - name: 查找rootfs.tar.gz
         id: find_rootfs
         run: |
           ROOTFS_FILE=$(find bin/targets/armsr/armv8/ -type f -name "*rootfs.tar.gz" | head -n1)
-          echo "✅ Found: $ROOTFS_FILE"
-          if [ ! -f "$ROOTFS_FILE" ]; then
-            echo "❌ 找不到 rootfs.tar.gz 文件"
-            exit 1
-          fi
           echo "file=$ROOTFS_FILE" >> $GITHUB_OUTPUT
-
-      - name: Package armsr-armv8 as ImmortalWrt for N1
+          
+      - name: Package for N1
         uses: wukongdaily/flippy-openwrt-actions@master
         env:
           OPENWRT_ARMVIRT: ${{ steps.find_rootfs.outputs.file }}
           PACKAGE_SOC: s905d
           KERNEL_VERSION_NAME: ${{ inputs.openwrt_kernel }}
+          # 开启自动获取，让它自动打出最新的几个内核版本
           KERNEL_AUTO_LATEST: true
           WHOAMI: ${{ inputs.builder_name }}
-
-      - name: Rename .img.gz file
+          
+      - name: Select latest and Rename .img.gz
         id: rename
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          FILES=(${{ env.PACKAGED_OUTPUTPATH }}/*.img.gz)
-          shopt -u nullglob
-          if [ "${#FILES[@]}" -ne 1 ]; then
-            echo "❌ 打包产物数量异常：期望 1 个 .img.gz，实际 ${#FILES[@]} 个"
-            printf '   %s\n' "${FILES[@]}"
+          # 1. 提取所有 img.gz 文件名中的版本号 (如 k6.18.57)
+          # 2. 使用 sort -V 进行版本号排序，tail -n1 取最高版本
+          LATEST_KERNEL=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*.img.gz | grep -oP 'k\d+\.\d+\.\d+' | sort -V | tail -n1)
+          
+          if [ -z "$LATEST_KERNEL" ]; then
+            echo "❌ 未找到任何匹配的内核文件版本号"
             exit 1
           fi
-          FILE="${FILES[0]}"
+          
+          echo "✅ 自动筛选出最新内核版本: $LATEST_KERNEL"
+          
+          # 3. 根据提取出的最新版本号，找到对应的那个文件
+          FILE=$(ls ${{ env.PACKAGED_OUTPUTPATH }}/*${LATEST_KERNEL}*.img.gz | head -n1)
+          
+          if [ -z "$FILE" ]; then
+            echo "❌ 未找到对应的 .img.gz 文件"
+            exit 1
+          fi
+          
           FILENAME=$(basename "$FILE")
-          echo "Image file is: $FILENAME"
-
-          KERNEL_VERSION=$(echo "$FILENAME" | grep -oP 'k\d+\.\d+\.\d+' | head -n1 || true)
-          if ! [[ "$KERNEL_VERSION" =~ ^k[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ 无法从原始产物名解析内核版本：$FILENAME"
-            exit 1
-          fi
-
           NAMED_LUCI_VERSION="${{ github.event.inputs.luci_version }}"
-          ARTIFACT_NAME="immortalwrt-$NAMED_LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
+          ARTIFACT_NAME="immortalwrt-$NAMED_LUCI_VERSION-phicomm-n1-btrfs-$LATEST_KERNEL.img.gz"
           
           mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/$ARTIFACT_NAME"
-          echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
-          echo "NAMED_LUCI_VERSION=$NAMED_LUCI_VERSION" >> $GITHUB_ENV
-          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
           echo "artifact=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
-          echo "✅ 命名合规：$ARTIFACT_NAME"
-
-      - name: 生成 release 说明
-        run: |
-          {
-            echo "### 本次构建：LuCI ${NAMED_LUCI_VERSION} · 内核 ${KERNEL_VERSION#k}"
-            echo
-            echo "产物：\`${ARTIFACT_NAME}\`"
-            echo
-            cat n1/info.md
-          } > n1/info-release.md
-
+          echo "✅ 最终上传包名: $ARTIFACT_NAME"
+          
       - name: Upload firmware to GitHub Releases
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: phicomm-n1
           name: ImmortalWrt for Phicomm N1
-          body_path: ${{ github.workspace }}/n1/info-release.md
-          files: |
-            ${{ env.PACKAGED_OUTPUTPATH }}/${{ steps.rename.outputs.artifact }}
+          files: ${{ env.PACKAGED_OUTPUTPATH }}/${{ steps.rename.outputs.artifact }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
