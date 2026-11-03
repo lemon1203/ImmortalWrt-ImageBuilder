@@ -1,4 +1,4 @@
-name: Build 25.12.2 N1
+name: Build 25.12.2 N1 (APK Native)
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +16,6 @@ on:
         type: choice
         options:
           - 6.18.y
-          - 6.12.y
       include_docker:
         description: "是否编译 Docker 插件"
         required: true
@@ -25,18 +24,8 @@ on:
         options:
           - 'yes'
           - 'no'
-      enable_store:
-        description: "集成 store 商店"
-        required: false
-        type: boolean
-        default: false
       skip_imagebuilder:
         description: "直接使用底包快速构建固件, 忽略自定义插件 ----（跳过 ImageBuilder）"
-        required: false
-        default: false
-        type: boolean
-      replace_banner:
-        description: '替换为ImmortalWrt的banner信息'
         required: false
         default: false
         type: boolean
@@ -60,32 +49,25 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/n1/build.sh
 
-      - name: Debug workspace contents
-        run: ls -R
-
-      - name: Enable Store integration
+      - name: Ensure apk-custom-packages.sh exists and is executable
         run: |
-          if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
-            echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/custom-packages.sh
-            echo "✅ 已追加 luci-app-store"
-          else
-            echo "❎ 未启用 luci-app-store"
+          mkdir -p shell
+          touch shell/apk-custom-packages.sh
+          chmod +x shell/apk-custom-packages.sh
+          # 确保宝盒工具作为 APK 包被正确拉取
+          if ! grep -q "luci-app-amlogic" shell/apk-custom-packages.sh; then
+            echo "luci-app-amlogic" >> shell/apk-custom-packages.sh
           fi
-
-      - name: 处理是否替换 banner 信息
-        if: ${{ github.event.inputs.skip_imagebuilder == 'false' && github.event.inputs.replace_banner == 'true' }}
-        run: |
-          cp n1/99-banner.sh files/etc/uci-defaults/
 
       - name: Building N1 ImmortalWrt rootfs 25.12.2
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs"
+          echo "✅ 使用 ImageBuilder 构建 rootfs (APK 原生模式)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -100,23 +82,15 @@ jobs:
               --user root \
               -w /home/build/immortalwrt \
               -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
-              -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/immortalwrt/files/etc/uci-defaults" \
-              -v "${{ github.workspace }}/arch/arch.conf:/home/build/immortalwrt/files/etc/opkg/arch.conf" \
+              -v "${{ github.workspace }}/files:/home/build/immortalwrt/files" \
               -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
-              -v "${{ github.workspace }}/n1/banner:/home/build/immortalwrt/files/mnt/banner" \
+              -v "${{ github.workspace }}/arch/arch.conf:/home/build/immortalwrt/files/etc/opkg/arch.conf" \
               -v "${{ github.workspace }}/n1/imm.config:/home/build/immortalwrt/.config" \
               -v "${{ github.workspace }}/n1/build.sh:/home/build/immortalwrt/build.sh" \
               -e PROFILE=$profile \
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
-              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
-                if [ ! -f scripts/opkg-key ]; then
-                  printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
-                  chmod +x scripts/opkg-key
-                  echo '已创建占位 opkg-key'
-                fi
-                /bin/bash /home/build/immortalwrt/build.sh
-              "
+              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
           done
 
       - name: Download prebuilt rootfs.tar.gz
@@ -159,14 +133,13 @@ jobs:
           LUCI_VERSION="${{ github.event.inputs.luci_version }}"
 
           if [ -n "$PREBUILT_LUCI_VERSION" ]; then
-             echo "PREBUILT_LUCI_VERSION is not empty: $PREBUILT_LUCI_VERSION"
-             mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$PREBUILT_LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
+            mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$PREBUILT_LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
           else
-             mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
+            mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
           fi
 
       - name: Upload firmware to GitHub Releases
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: phicomm-n1
           name: ImmortalWrt for Phicomm N1
