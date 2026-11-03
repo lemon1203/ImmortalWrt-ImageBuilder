@@ -1,4 +1,4 @@
-name: Build 25.12.2 N1 (APK Native)
+name: Build 25.12.2 N1 (Hotfix)
 on:
   workflow_dispatch:
     inputs:
@@ -76,23 +76,12 @@ jobs:
       - name: 处理是否替换 banner 信息
         if: ${{ github.event.inputs.skip_imagebuilder == 'false' && github.event.inputs.replace_banner == 'true' }}
         run: |
-          # 使用ImageBuilder构建 且用户勾选了替换banner时
           cp n1/99-banner.sh files/etc/uci-defaults/
-
-      - name: Ensure apk-custom-packages.sh exists and is executable
-        run: |
-          mkdir -p shell
-          touch shell/apk-custom-packages.sh
-          chmod +x shell/apk-custom-packages.sh
-          # 确保宝盒工具作为 APK 包被正确拉取
-          if ! grep -q "luci-app-amlogic" shell/apk-custom-packages.sh; then
-            echo "luci-app-amlogic" >> shell/apk-custom-packages.sh
-          fi
 
       - name: Building N1 ImmortalWrt rootfs 25.12.2
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs (APK 原生模式)"
+          echo "✅ 使用 ImageBuilder 构建 rootfs (应用 APK 热修复)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -115,7 +104,20 @@ jobs:
               -e PROFILE=$profile \
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
-              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
+              immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
+                # Hotfix: 强制 Makefile 使用 apk 而不是 opkg
+                echo 'Applying hotfix for apk support...'
+                sed -i 's/opkg/apk/g' Makefile
+                sed -i 's/opkg-key/apk/g' Makefile
+                
+                # 确保使用 APK 的配置开关是开启的
+                if ! grep -q 'CONFIG_USE_APK=y' .config; then
+                  echo 'CONFIG_USE_APK=y' >> .config
+                fi
+                
+                # 执行构建
+                /bin/bash /home/build/immortalwrt/build.sh
+              "
           done
 
       - name: Download prebuilt rootfs.tar.gz
