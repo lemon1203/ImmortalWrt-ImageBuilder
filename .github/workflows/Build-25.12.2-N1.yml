@@ -24,8 +24,18 @@ on:
         options:
           - 'yes'
           - 'no'
+      enable_store:
+        description: "集成 store 商店"
+        required: false
+        type: boolean
+        default: false
       skip_imagebuilder:
         description: "直接使用底包快速构建固件, 忽略自定义插件 ----（跳过 ImageBuilder）"
+        required: false
+        default: false
+        type: boolean
+      replace_banner:
+        description: '替换为ImmortalWrt的banner信息'
         required: false
         default: false
         type: boolean
@@ -53,6 +63,21 @@ jobs:
 
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/n1/build.sh
+
+      - name: Enable Store integration
+        run: |
+          if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
+            echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/custom-packages.sh
+            echo "✅ 已追加 luci-app-store"
+          else
+            echo "❎ 未启用 luci-app-store"
+          fi
+
+      - name: 处理是否替换 banner 信息
+        if: ${{ github.event.inputs.skip_imagebuilder == 'false' && github.event.inputs.replace_banner == 'true' }}
+        run: |
+          # 使用ImageBuilder构建 且用户勾选了替换banner时
+          cp n1/99-banner.sh files/etc/uci-defaults/
 
       - name: Ensure apk-custom-packages.sh exists and is executable
         run: |
