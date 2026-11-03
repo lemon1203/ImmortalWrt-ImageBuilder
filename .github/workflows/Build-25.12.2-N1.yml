@@ -30,7 +30,7 @@ on:
         type: boolean
         default: false
       skip_imagebuilder:
-        description: "直接使用底包快速构建固件, 忽略自定义插件 ----（跳过 ImageBuilder）"
+        description: "直接使用底包快速构建固件, 忽略自定义插件"
         required: false
         default: false
         type: boolean
@@ -65,23 +65,19 @@ jobs:
         run: chmod +x ${{ github.workspace }}/n1/build.sh
 
       - name: Enable Store integration
+        if: ${{ github.event.inputs.enable_store == 'true' }}
         run: |
-          if [ "${{ github.event.inputs.enable_store }}" == "true" ]; then
-            echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/custom-packages.sh
-            echo "✅ 已追加 luci-app-store"
-          else
-            echo "❎ 未启用 luci-app-store"
-          fi
+          echo 'CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-store"' >> shell/custom-packages.sh
 
       - name: 处理是否替换 banner 信息
         if: ${{ github.event.inputs.skip_imagebuilder == 'false' && github.event.inputs.replace_banner == 'true' }}
         run: |
           cp n1/99-banner.sh files/etc/uci-defaults/
 
-      - name: Building N1 ImmortalWrt rootfs 25.12.2
+      - name: Building N1 ImmortalWrt rootfs 25.12.2 (APK Native Fix)
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs"
+          echo "✅ 使用 ImageBuilder 构建 rootfs (应用官方 APK 修复)"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -105,22 +101,13 @@ jobs:
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
-                # 1. 强制开启 APK 并关闭签名检查
-                if ! grep -q 'CONFIG_USE_APK=y' .config; then
-                  echo 'CONFIG_USE_APK=y' >> .config
-                fi
-                if ! grep -q 'CONFIG_SIGNED_PACKAGES=n' .config; then
-                  echo 'CONFIG_SIGNED_PACKAGES=n' >> .config
-                fi
-                
-                # 2. 创建假的 opkg-key 防止底层脚本找不到文件报错
-                mkdir -p scripts
-                if [ ! -f scripts/opkg-key ]; then
-                  printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
-                  chmod +x scripts/opkg-key
-                fi
-                
-                # 3. 执行原有构建脚本
+                # 官方修复：将 Makefile 中错误的 opkg 调用替换为 apk
+                sed -i 's/opkg info --depends/apk info --depends/g' Makefile
+                # 强制启用 APK 并关闭签名验证（避免 opkg-key 报错）
+                grep -q 'CONFIG_USE_APK=y' .config || echo 'CONFIG_USE_APK=y' >> .config
+                sed -i '/CONFIG_SIGNED_PACKAGES/d' .config
+                echo '# CONFIG_SIGNED_PACKAGES is not set' >> .config
+                # 执行构建
                 /bin/bash /home/build/immortalwrt/build.sh
               "
           done
