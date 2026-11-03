@@ -1,4 +1,4 @@
-name: Build 25.12.2 N1 (Hotfix)
+name: Build 25.12.2 N1 (APK Native Fix)
 on:
   workflow_dispatch:
     inputs:
@@ -81,7 +81,7 @@ jobs:
       - name: Building N1 ImmortalWrt rootfs 25.12.2
         if: ${{ github.event.inputs.skip_imagebuilder != 'true' }}
         run: |
-          echo "✅ 使用 ImageBuilder 构建 rootfs (应用 APK 热修复)"
+          echo "✅ 使用 ImageBuilder 构建 rootfs"
           profiles="generic"
           include_docker="${{ github.event.inputs.include_docker }}"
           rootfs_partsize="${{ github.event.inputs.rootfs_partsize }}"
@@ -105,17 +105,22 @@ jobs:
               -e INCLUDE_DOCKER=$include_docker \
               -e ROOTFS_PARTSIZE=$rootfs_partsize \
               immortalwrt/imagebuilder:armsr-armv8-openwrt-${luci_version} /bin/bash -c "
-                # Hotfix: 强制 Makefile 使用 apk 而不是 opkg
-                echo 'Applying hotfix for apk support...'
-                sed -i 's/opkg/apk/g' Makefile
-                sed -i 's/opkg-key/apk/g' Makefile
-                
-                # 确保使用 APK 的配置开关是开启的
+                # 1. 强制开启 APK 并关闭签名检查
                 if ! grep -q 'CONFIG_USE_APK=y' .config; then
                   echo 'CONFIG_USE_APK=y' >> .config
                 fi
+                if ! grep -q 'CONFIG_SIGNED_PACKAGES=n' .config; then
+                  echo 'CONFIG_SIGNED_PACKAGES=n' >> .config
+                fi
                 
-                # 执行构建
+                # 2. 创建假的 opkg-key 防止底层脚本找不到文件报错
+                mkdir -p scripts
+                if [ ! -f scripts/opkg-key ]; then
+                  printf '#!/bin/sh\nexit 0\n' > scripts/opkg-key
+                  chmod +x scripts/opkg-key
+                fi
+                
+                # 3. 执行原有构建脚本
                 /bin/bash /home/build/immortalwrt/build.sh
               "
           done
@@ -160,9 +165,10 @@ jobs:
           LUCI_VERSION="${{ github.event.inputs.luci_version }}"
 
           if [ -n "$PREBUILT_LUCI_VERSION" ]; then
-            mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$PREBUILT_LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
+             echo "PREBUILT_LUCI_VERSION is not empty: $PREBUILT_LUCI_VERSION"
+             mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$PREBUILT_LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
           else
-            mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
+             mv "$FILE" "${{ env.PACKAGED_OUTPUTPATH }}/immortalwrt-$LUCI_VERSION-phicomm-n1-btrfs-$KERNEL_VERSION.img.gz"
           fi
 
       - name: Upload firmware to GitHub Releases
