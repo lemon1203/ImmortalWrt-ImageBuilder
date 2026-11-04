@@ -1,16 +1,15 @@
 #!/bin/bash
-# ============= N1 专属第三方插件库（官方源+防限流下载 完整版） =============
+# ============= N1 专属第三方插件库（官方源+稳定下载版） =============
 
-# 确保目录存在
-mkdir -p /home/build/immortalwrt/files/etc/apk/keys
-mkdir -p /home/build/immortalwrt/files/etc/apk/repositories.d
-mkdir -p /home/build/immortalwrt/extra-packages/aurora
-mkdir -p /home/build/immortalwrt/extra-packages/amlogic
-
+# 基础架构
 ARCH="aarch64_generic"
 
+# 确保 APK 配置目录存在
+mkdir -p /home/build/immortalwrt/files/etc/apk/keys
+mkdir -p /home/build/immortalwrt/files/etc/apk/repositories.d
+
 # ==========================================
-# 1. PassWall 集成
+# 1. PassWall 集成 (官方源)
 # ==========================================
 if [ "$INCLUDE_PASSWALL" = "yes" ]; then
     echo "✅ 已选择集成 PassWall，正在配置官方源..."
@@ -45,37 +44,47 @@ if [ "$INCLUDE_AURORA" = "yes" ]; then
     # 下载作者的公钥
     wget -q -O /home/build/immortalwrt/files/etc/apk/keys/eamonxg.pub https://openwrt.eamonxg.fun/public.key
 
-    # 写入 Feed 源 (添加 base 和 luci 两个可能的目录以确保万无一失)
+    # 写入 Feed 源
     cat > /home/build/immortalwrt/files/etc/apk/repositories.d/eamonxg.list << EOF
 https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/luci
 https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/base
 EOF
 
-    # 加入包名列表 (apk 会自动从上面的源里拉取最新版和依赖)
+    # 加入包名列表
     PACKAGES="$PACKAGES luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn"
 fi
 
 # ==========================================
-# 4. 晶晨宝盒集成 (通过 API 动态抓取最新版)
+# 4. 晶晨宝盒集成 (恢复老版本稳定提取逻辑)
 # ==========================================
-echo "📥 正在获取晶晨宝盒最新版本..."
-AMLOGIC_API="https://api.github.com/repos/ophub/luci-app-amlogic/releases/latest"
+echo "🔄 正在获取晶晨宝盒最新版本..."
+AMLOGIC_REPO="ophub/luci-app-amlogic"
+# 提取 tag_name
+AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
-# 带上 GITHUB_TOKEN 请求，防止被限流封禁
-AMLOGIC_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "$AMLOGIC_API" | grep "browser_download_url.*luci-app-amlogic.*\.apk" | cut -d '"' -f 4 | head -n 1)
-AMLOGIC_I18N_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "$AMLOGIC_API" | grep "browser_download_url.*luci-i18n-amlogic-zh-cn.*\.apk" | cut -d '"' -f 4 | head -n 1)
+if [ -z "$AMLOGIC_TAG" ]; then
+    echo "⚠️ 无法获取最新版本，使用备用版本..."
+    AMLOGIC_TAG="26.10.2002-js"
+fi
+echo "✅ 晶晨宝盒版本: ${AMLOGIC_TAG}"
 
-if [ -n "$AMLOGIC_URL" ]; then
-    echo "下载晶晨宝盒主程序..."
-    wget -q "$AMLOGIC_URL" -P "/home/build/immortalwrt/extra-packages/amlogic/"
-else
-    echo "❌ 获取晶晨宝盒最新链接失败！"
+AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
+mkdir -p "$AMLOGIC_DIR"
+
+echo "📥 正在下载晶晨宝盒原始 apk 文件..."
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-app-amlogic-${AMLOGIC_TAG%-*}-r2.apk" -P "$AMLOGIC_DIR/" || \
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-app-amlogic-26.10.2002-r2.apk" -P "$AMLOGIC_DIR/"
+
+wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-i18n-amlogic-zh-cn-0.apk" -P "$AMLOGIC_DIR/"
+
+# 检查是否下载到主程序
+if ! ls "$AMLOGIC_DIR"/luci-app-amlogic-*.apk >/dev/null 2>&1; then
+    echo "❌ 致命错误：晶晨宝盒主程序未能下载，停止构建。"
     exit 1
 fi
 
-if [ -n "$AMLOGIC_I18N_URL" ]; then
-    wget -q "$AMLOGIC_I18N_URL" -P "/home/build/immortalwrt/extra-packages/amlogic/"
-fi
+echo "✅ 已下载的 apk 文件（原始名称）："
+ls -lh "$AMLOGIC_DIR"/*.apk
 
 # 追加宝盒相关的底层依赖
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
@@ -83,7 +92,7 @@ PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk par
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
 # ==========================================
-# 5. 整理本地下载的 apk (宝盒)
+# 5. 整理本地下载的 apk
 # ==========================================
 echo "📦 整理并注入本地 apk 文件..."
 sh shell/apk-prepare-packages.sh
