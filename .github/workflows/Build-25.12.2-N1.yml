@@ -1,1 +1,167 @@
+name: Build 25.12.x N1
 
+on:
+  workflow_dispatch:
+    inputs:
+      luci_version:
+        description: "底包版本 (仅25.12.2)"
+        required: false
+        default: "25.12.2"
+        type: choice
+        options:
+          - 25.12.2
+      openwrt_kernel:
+        description: "内核系列 (自动获取最新)"
+        required: false
+        default: "6.18.y"
+        type: string
+      packaging_tool:
+        description: "打包工具 (Ophub / Flippy)"
+        required: true
+        default: 'ophub'
+        type: choice
+        options:
+          - 'ophub'
+          - 'flippy'
+      include_pppoe:
+        description: "保留 PPPoE 拨号"
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+      include_wireless:
+        description: "保留无线 WiFi"
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+      include_passwall:
+        description: "集成 PassWall (含核心与源)"
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+      include_smartdns:
+        description: "集成 SmartDNS (含WebUI)"
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+      include_aurora:
+        description: "集成 Aurora 主题"
+        required: true
+        default: 'yes'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set executable permissions
+        run: chmod +x ${{ github.workspace }}/n1/build25.sh
+      
+      # ================= 1. 编译底包 =================
+      - name: Building N1 ImmortalWrt rootfs
+        run: |
+          docker run --rm -i \
+            --user root \
+            -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
+            -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/immortalwrt/files/etc/uci-defaults" \
+            -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
+            -v "${{ github.workspace }}/n1/banner:/home/build/immortalwrt/files/mnt/banner" \
+            -v "${{ github.workspace }}/n1/build25.sh:/home/build/immortalwrt/build.sh" \
+            -e PROFILE=generic \
+            -e ROOTFS_PARTSIZE=1024 \
+            -e INCLUDE_PPPOE="${{ github.event.inputs.include_pppoe }}" \
+            -e INCLUDE_WIRELESS="${{ github.event.inputs.include_wireless }}" \
+            -e INCLUDE_PASSWALL="${{ github.event.inputs.include_passwall }}" \
+            -e INCLUDE_SMARTDNS="${{ github.event.inputs.include_smartdns }}" \
+            -e INCLUDE_AURORA="${{ github.event.inputs.include_aurora }}" \
+            immortalwrt/imagebuilder:armsr-armv8-openwrt-${{ github.event.inputs.luci_version }} /bin/bash /home/build/immortalwrt/build.sh
+      
+      - name: Find compiled rootfs
+        id: find_rootfs
+        run: |
+          ROOTFS_FILE=$(find bin/targets/armsr/armv8/ -type f -name "*rootfs.tar.gz" | head -n1)
+          echo "file=$ROOTFS_FILE" >> $GITHUB_OUTPUT
+
+      # ================= 2. Ophub 打包路线 =================
+      - name: Package with Ophub
+        if: ${{ github.event.inputs.packaging_tool == 'ophub' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          git clone --depth=1 https://github.com/ophub/amlogic-s9xxx-openwrt.git /tmp/ophub-packit
+          mkdir -p /tmp/ophub-packit/openwrt-armsr
+          cp ${{ steps.find_rootfs.outputs.file }} /tmp/ophub-packit/openwrt-armsr/
+          cd /tmp/ophub-packit
+          chmod +x remake
+          sudo ./remake -b s905d -k ${{ github.event.inputs.openwrt_kernel }} -a true -u stable -n "lemon1203"
+          mkdir -p ${{ github.workspace }}/output
+          cp /tmp/ophub-packit/output/*.img.gz ${{ github.workspace }}/output/
+
+      # ================= 3. Flippy 打包路线 =================
+      - name: Package with Flippy
+        if: ${{ github.event.inputs.packaging_tool == 'flippy' }}
+        uses: wukongdaily/flippy-openwrt-actions@master
+        env:
+          OPENWRT_ARMVIRT: ${{ steps.find_rootfs.outputs.file }}
+          PACKAGE_SOC: s905d
+          KERNEL_VERSION_NAME: ${{ github.event.inputs.openwrt_kernel }}
+          KERNEL_AUTO_LATEST: true
+          WHOAMI: "lemon1203"
+
+      - name: Collect Flippy Output
+        if: ${{ github.event.inputs.packaging_tool == 'flippy' }}
+        run: |
+          mkdir -p ${{ github.workspace }}/output
+          cp ${{ env.PACKAGED_OUTPUTPATH }}/*.img.gz ${{ github.workspace }}/output/
+
+      # ================= 4. 筛选最新内核版本并重命名 =================
+      - name: Rename Firmware
+        id: rename
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=(${{ github.workspace }}/output/*.img.gz)
+          if [ "${#FILES[@]}" -eq 0 ]; then 
+            echo "❌ 找不到生成的固件！"
+            exit 1
+          fi
+          
+          # 提取版本号最大的最新固件
+          LATEST_KERNEL=$(ls ${{ github.workspace }}/output/*.img.gz | grep -oP 'k\d+\.\d+\.\d+' | sort -V | tail -n1)
+          FILE=$(ls ${{ github.workspace }}/output/*${LATEST_KERNEL}*.img.gz | head -n1)
+          
+          ARTIFACT_NAME="immortalwrt-${{ github.event.inputs.luci_version }}-n1-${{ github.event.inputs.packaging_tool }}-$LATEST_KERNEL.img.gz"
+          mv "$FILE" "${{ github.workspace }}/output/$ARTIFACT_NAME"
+          
+          echo "artifact=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+          echo "✅ 已挑选出最新内核固件: $ARTIFACT_NAME"
+
+      # ================= 5. 上传至 Release =================
+      - name: Upload firmware
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: phicomm-n1
+          name: ImmortalWrt for Phicomm N1
+          files: ${{ github.workspace }}/output/${{ steps.rename.outputs.artifact }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
