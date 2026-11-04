@@ -1,15 +1,6 @@
 name: Delete old workflow runs
 on:
   workflow_dispatch:
-    inputs:
-      days:
-        description: 'Days to keep'
-        required: true
-        default: '0'
-      minimum_runs:
-        description: 'Minimum runs to keep'
-        required: true
-        default: '0'
 
 jobs:
   del_runs:
@@ -20,5 +11,7 @@ jobs:
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          retain_days: ${{ github.event.inputs.days }}
-          keep_minimum_runs: ${{ github.event.inputs.minimum_runs }}
+          # 这里精确指定你要删除的工作流名称！
+          delete_workflow_pattern: "Build 25.12.x N1"
+          retain_days: 0
+          keep_minimum_runs: 0
