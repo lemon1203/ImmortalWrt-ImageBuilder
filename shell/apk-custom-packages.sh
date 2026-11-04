@@ -1,16 +1,23 @@
 #!/bin/bash
-# ============= N1 专属第三方插件库（源配置 + 动态最新版下载 + 包名注入） =============
+# ============= N1 专属第三方插件库（官方源+防限流下载 完整版） =============
 
-# 1. PassWall (配置源，由 apk 自动解析拉取最新版)
+# 确保目录存在
+mkdir -p /home/build/immortalwrt/files/etc/apk/keys
+mkdir -p /home/build/immortalwrt/files/etc/apk/repositories.d
+mkdir -p /home/build/immortalwrt/extra-packages/aurora
+mkdir -p /home/build/immortalwrt/extra-packages/amlogic
+
+ARCH="aarch64_generic"
+
+# ==========================================
+# 1. PassWall 集成
+# ==========================================
 if [ "$INCLUDE_PASSWALL" = "yes" ]; then
     echo "✅ 已选择集成 PassWall，正在配置官方源..."
-    mkdir -p /home/build/immortalwrt/files/etc/apk/keys
-    mkdir -p /home/build/immortalwrt/files/etc/apk/repositories.d
-
+    
     wget -q -O /home/build/immortalwrt/files/etc/apk/keys/openwrt-passwall-build.pem \
       https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub
 
-    ARCH="aarch64_generic"
     cat > /home/build/immortalwrt/files/etc/apk/repositories.d/passwall.list << EOF
 https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_luci/packages.adb
 https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_packages/packages.adb
@@ -21,59 +28,62 @@ EOF
     PACKAGES="$PACKAGES kmod-nft-socket kmod-nft-tproxy kmod-nft-nat"
 fi
 
-# 2. SmartDNS (官方源自带，自动拉取最新，包含原生 WebUI)
+# ==========================================
+# 2. SmartDNS 集成 (包含原生 WebUI)
+# ==========================================
 if [ "$INCLUDE_SMARTDNS" = "yes" ]; then
     echo "✅ 已选择集成 SmartDNS 及原生 WebUI"
     PACKAGES="$PACKAGES luci-app-smartdns luci-i18n-smartdns-zh-cn smartdns-ui"
 fi
 
-# 3. Aurora 主题 (通过 API 动态抓取最新 URL)
+# ==========================================
+# 3. Aurora 主题集成 (通过作者官方源)
+# ==========================================
 if [ "$INCLUDE_AURORA" = "yes" ]; then
-    echo "✅ 已选择集成 Aurora 主题，正在下载最新版..."
-    AURORA_API="https://api.github.com/repos/eamonxg/luci-theme-aurora/releases/latest"
+    echo "✅ 已选择集成 Aurora 主题，正在配置作者官方源..."
     
-    THEME_URL=$(curl -s "$AURORA_API" | grep "browser_download_url.*luci-theme-aurora.*\.apk" | cut -d '"' -f 4 | head -n1)
-    CONFIG_URL=$(curl -s "$AURORA_API" | grep "browser_download_url.*luci-app-aurora-config.*\.apk" | cut -d '"' -f 4 | head -n1)
-    I18N_URL=$(curl -s "$AURORA_API" | grep "browser_download_url.*i18n.*zh-cn.*\.apk" | cut -d '"' -f 4 | head -n1)
-    
-    # 【修复】下载到 extra-packages/aurora 目录，防止被后续的清理脚本误删
-    AURORA_DIR="/home/build/immortalwrt/extra-packages/aurora"
-    mkdir -p "$AURORA_DIR"
-    
-    if [ -n "$THEME_URL" ]; then wget -q "$THEME_URL" -P "$AURORA_DIR/"; fi
-    if [ -n "$CONFIG_URL" ]; then wget -q "$CONFIG_URL" -P "$AURORA_DIR/"; fi
-    if [ -n "$I18N_URL" ]; then wget -q "$I18N_URL" -P "$AURORA_DIR/"; fi
-    
+    # 下载作者的公钥
+    wget -q -O /home/build/immortalwrt/files/etc/apk/keys/eamonxg.pub https://openwrt.eamonxg.fun/public.key
+
+    # 写入 Feed 源 (添加 base 和 luci 两个可能的目录以确保万无一失)
+    cat > /home/build/immortalwrt/files/etc/apk/repositories.d/eamonxg.list << EOF
+https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/luci
+https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/base
+EOF
+
+    # 加入包名列表 (apk 会自动从上面的源里拉取最新版和依赖)
     PACKAGES="$PACKAGES luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn"
 fi
 
-# 4. 晶晨宝盒 (通过 API 动态抓取最新绝对链接，杜绝任何硬编码)
+# ==========================================
+# 4. 晶晨宝盒集成 (通过 API 动态抓取最新版)
+# ==========================================
 echo "📥 正在获取晶晨宝盒最新版本..."
 AMLOGIC_API="https://api.github.com/repos/ophub/luci-app-amlogic/releases/latest"
-AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
-mkdir -p "$AMLOGIC_DIR"
 
-# 动态获取包含文件名的完整下载链接
-AMLOGIC_URL=$(curl -s "$AMLOGIC_API" | grep "browser_download_url.*luci-app-amlogic.*\.apk" | cut -d '"' -f 4 | head -n 1)
-AMLOGIC_I18N_URL=$(curl -s "$AMLOGIC_API" | grep "browser_download_url.*luci-i18n-amlogic-zh-cn.*\.apk" | cut -d '"' -f 4 | head -n 1)
+# 带上 GITHUB_TOKEN 请求，防止被限流封禁
+AMLOGIC_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "$AMLOGIC_API" | grep "browser_download_url.*luci-app-amlogic.*\.apk" | cut -d '"' -f 4 | head -n 1)
+AMLOGIC_I18N_URL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" "$AMLOGIC_API" | grep "browser_download_url.*luci-i18n-amlogic-zh-cn.*\.apk" | cut -d '"' -f 4 | head -n 1)
 
 if [ -n "$AMLOGIC_URL" ]; then
-    echo "下载主程序: $AMLOGIC_URL"
-    wget -q "$AMLOGIC_URL" -P "$AMLOGIC_DIR/"
+    echo "下载晶晨宝盒主程序..."
+    wget -q "$AMLOGIC_URL" -P "/home/build/immortalwrt/extra-packages/amlogic/"
 else
     echo "❌ 获取晶晨宝盒最新链接失败！"
     exit 1
 fi
 
 if [ -n "$AMLOGIC_I18N_URL" ]; then
-    wget -q "$AMLOGIC_I18N_URL" -P "$AMLOGIC_DIR/"
+    wget -q "$AMLOGIC_I18N_URL" -P "/home/build/immortalwrt/extra-packages/amlogic/"
 fi
 
-# 追加晶晨宝盒相关依赖和包名
+# 追加宝盒相关的底层依赖
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
-# 5. 统一整理下载的本地 apk 到 packages 目录 (这步会自动把 aurora 和 amlogic 的包都拷进去)
-echo "📦 整理本地下载的 apk 文件..."
+# ==========================================
+# 5. 整理本地下载的 apk (宝盒)
+# ==========================================
+echo "📦 整理并注入本地 apk 文件..."
 sh shell/apk-prepare-packages.sh
