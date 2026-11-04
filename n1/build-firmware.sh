@@ -18,6 +18,9 @@ PACKAGES="$PACKAGES luci-i18n-firewall-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-ttyd-zh-cn"
 PACKAGES="$PACKAGES openssh-sftp-server"
 
+# 无线网卡驱动
+PACKAGES="$PACKAGES kmod-brcmfmac wpad-basic-mbedtls iw iwinfo"
+
 # ============= 2. 注入第三方扩展 =============
 source shell/apk-custom-packages.sh
 
