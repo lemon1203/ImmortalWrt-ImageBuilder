@@ -24,7 +24,6 @@ fi
 # 2. SmartDNS (官方源自带，自动拉取最新，包含原生 WebUI)
 if [ "$INCLUDE_SMARTDNS" = "yes" ]; then
     echo "✅ 已选择集成 SmartDNS 及原生 WebUI"
-    # smartdns-ui 是 SmartDNS 原生的独立 Web 面板
     PACKAGES="$PACKAGES luci-app-smartdns luci-i18n-smartdns-zh-cn smartdns-ui"
 fi
 
@@ -37,11 +36,13 @@ if [ "$INCLUDE_AURORA" = "yes" ]; then
     CONFIG_URL=$(curl -s "$AURORA_API" | grep "browser_download_url.*luci-app-aurora-config.*\.apk" | cut -d '"' -f 4 | head -n1)
     I18N_URL=$(curl -s "$AURORA_API" | grep "browser_download_url.*i18n.*zh-cn.*\.apk" | cut -d '"' -f 4 | head -n1)
     
-    mkdir -p /home/build/immortalwrt/packages/
-    # 保留原文件名下载，防止 APK 签名校验失败
-    if [ -n "$THEME_URL" ]; then wget -q "$THEME_URL" -P /home/build/immortalwrt/packages/; fi
-    if [ -n "$CONFIG_URL" ]; then wget -q "$CONFIG_URL" -P /home/build/immortalwrt/packages/; fi
-    if [ -n "$I18N_URL" ]; then wget -q "$I18N_URL" -P /home/build/immortalwrt/packages/; fi
+    # 【修复】下载到 extra-packages/aurora 目录，防止被后续的清理脚本误删
+    AURORA_DIR="/home/build/immortalwrt/extra-packages/aurora"
+    mkdir -p "$AURORA_DIR"
+    
+    if [ -n "$THEME_URL" ]; then wget -q "$THEME_URL" -P "$AURORA_DIR/"; fi
+    if [ -n "$CONFIG_URL" ]; then wget -q "$CONFIG_URL" -P "$AURORA_DIR/"; fi
+    if [ -n "$I18N_URL" ]; then wget -q "$I18N_URL" -P "$AURORA_DIR/"; fi
     
     PACKAGES="$PACKAGES luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn"
 fi
@@ -73,7 +74,6 @@ PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perl
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
-# 5. 统一整理下载的本地 apk 到 packages 目录
+# 5. 统一整理下载的本地 apk 到 packages 目录 (这步会自动把 aurora 和 amlogic 的包都拷进去)
 echo "📦 整理本地下载的 apk 文件..."
 sh shell/apk-prepare-packages.sh
-cp "$AMLOGIC_DIR"/*.apk /home/build/immortalwrt/packages/ 2>/dev/null || true
