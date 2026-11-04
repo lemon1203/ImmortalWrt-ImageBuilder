@@ -3,6 +3,8 @@
 # 斐讯 N1 (Amlogic S905D) 通用固件构建脚本
 # ==========================================
 
+cd "$(dirname "$0")" || exit 1
+
 LOGFILE="/tmp/uci-defaults-log.txt"
 echo "Starting N1 build at $(date)" >> $LOGFILE
 echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
