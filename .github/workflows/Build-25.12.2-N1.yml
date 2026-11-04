@@ -55,14 +55,6 @@ on:
         options:
           - 'yes'
           - 'no'
-      include_aurora:
-        description: "集成 Aurora 主题"
-        required: true
-        default: 'yes'
-        type: choice
-        options:
-          - 'yes'
-          - 'no'
 
 permissions:
   contents: write
@@ -93,7 +85,6 @@ jobs:
             -e INCLUDE_WIRELESS="${{ github.event.inputs.include_wireless }}" \
             -e INCLUDE_PASSWALL="${{ github.event.inputs.include_passwall }}" \
             -e INCLUDE_SMARTDNS="${{ github.event.inputs.include_smartdns }}" \
-            -e INCLUDE_AURORA="${{ github.event.inputs.include_aurora }}" \
             immortalwrt/imagebuilder:armsr-armv8-openwrt-${{ github.event.inputs.luci_version }} /bin/bash /home/build/immortalwrt/build.sh
       
       - name: Find compiled rootfs
