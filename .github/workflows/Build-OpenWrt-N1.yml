@@ -41,7 +41,7 @@ on:
           - 'yes'
           - 'no'
       include_smartdns:
-        description: "集成 SmartDNS (含WebUI)"
+        description: "集成 SmartDNS"
         required: true
         default: 'yes'
         type: choice
@@ -67,6 +67,7 @@ jobs:
         run: |
           docker run --rm -i \
             --user root \
+            -w /builder \
             -v "${{ github.workspace }}/bin:/builder/bin" \
             -v "${{ github.workspace }}/files/etc/uci-defaults:/builder/files/etc/uci-defaults" \
             -v "${{ github.workspace }}/shell:/builder/shell" \
@@ -74,6 +75,7 @@ jobs:
             -v "${{ github.workspace }}/n1/build-firmware.sh:/builder/build.sh" \
             -e PROFILE=generic \
             -e ROOTFS_PARTSIZE="1024" \
+            -e TARGET_OS="OpenWrt" \
             -e INCLUDE_PASSWALL="${{ github.event.inputs.include_passwall }}" \
             -e INCLUDE_SMARTDNS="${{ github.event.inputs.include_smartdns }}" \
             openwrt/imagebuilder:armsr-armv8-${{ github.event.inputs.luci_version }} /bin/bash /builder/build.sh
