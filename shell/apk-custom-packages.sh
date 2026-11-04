@@ -36,14 +36,12 @@ fi
 
 # ============= 3. Aurora 主题 =============
 if [ "$INCLUDE_AURORA" = "yes" ]; then
-    echo "✅ 已选择集成 Aurora 主题"
+    echo "✅ 已选择集成 Aurora 主题，正在通过官方脚本配置源..."
     
-    # 下载公钥
-    wget -q -O /home/build/immortalwrt/files/etc/apk/keys/eamonxg.pub \
-      https://openwrt.eamonxg.fun/public.key
-      
-    # 追加源 (这里使用作者提供的 snapshot 源)
-    echo "https://openwrt.eamonxg.fun/snapshots/apk/packages.adb" >> /home/build/immortalwrt/files/etc/apk/repositories.d/customfeeds.list
-    
+    # 调用作者官方安装脚本，它会自动识别 apk/opkg 并添加正确的源
+    # 使用 -s 参数只安装主题本体，避免脚本交互式地安装其他无关插件
+    wget -qO- https://openwrt.eamonxg.fun/install.sh | sh -s -- -s luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn
+
+    # 将包名加入安装列表
     PACKAGES="$PACKAGES luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn"
 fi
