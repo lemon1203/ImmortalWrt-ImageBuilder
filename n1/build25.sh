@@ -21,11 +21,17 @@ fi
 
 if [ "$INCLUDE_WIRELESS" = "no" ]; then
     PACKAGES="$PACKAGES -kmod-brcmfmac -wpad-basic-mbedtls -iw -iwinfo"
-    # 隐藏菜单
     mkdir -p /home/build/immortalwrt/files/etc/uci-defaults
     cat > /home/build/immortalwrt/files/etc/uci-defaults/99-remove-wireless << 'EOF'
 #!/bin/sh
+# 1. 删除无线配置文件
 rm -f /etc/config/wireless
+
+# 2. 把博通无线驱动加入黑名单，禁止内核加载它！
+mkdir -p /etc/modules.d
+echo "blacklist brcmfmac" > /etc/modules.d/blacklist-wifi
+echo "blacklist brcmutil" >> /etc/modules.d/blacklist-wifi
+
 exit 0
 EOF
     chmod +x /home/build/immortalwrt/files/etc/uci-defaults/99-remove-wireless
