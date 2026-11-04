@@ -3,26 +3,15 @@
 # 斐讯 N1 (Amlogic S905D) 通用固件构建脚本
 # ==========================================
 
+cd "$(dirname "$0")" || exit 1
+
 LOGFILE="/tmp/uci-defaults-log.txt"
 echo "Starting N1 build at $(date)" >> $LOGFILE
 echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
 
-# 自动寻找 Makefile 所在的目录
-if [ ! -f "Makefile" ]; then
-    echo "⚠️ 当前目录没有 Makefile，正在寻找..."
-    cd /home/build/openwrt* 2>/dev/null || cd /home/build/immortalwrt 2>/dev/null || true
-fi
-
-if [ ! -f "Makefile" ]; then
-    echo "❌ 致命错误: 依然找不到 Makefile"
-    ls -la /home/build/
-    exit 1
-fi
-
 # ============= 1. 基础纯净包列表 =============
 PACKAGES=""
 PACKAGES="$PACKAGES curl fdisk unzip"
-PACKAGES="$PACKAGES luci-i18n-diskman-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-package-manager-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-firewall-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-ttyd-zh-cn"
@@ -69,7 +58,6 @@ sh shell/apk-prepare-packages.sh
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"
 
-# 【核心修复】：使用相对路径
 make image PROFILE=$PROFILE PACKAGES="$PACKAGES" FILES="./files" ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE
 
 if [ $? -ne 0 ]; then
