@@ -58,6 +58,7 @@ jobs:
         run: |
           docker run --rm -i \
             --user root \
+            -w /home/build/immortalwrt \
             -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
             -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/immortalwrt/files/etc/uci-defaults" \
             -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
