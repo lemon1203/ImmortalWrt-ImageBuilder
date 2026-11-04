@@ -31,11 +31,6 @@ EOF
     chmod +x /home/build/immortalwrt/files/etc/uci-defaults/99-remove-wireless
 fi
 
-if [ "$INCLUDE_DOCKER" = "yes" ]; then
-    PACKAGES="$PACKAGES luci-i18n-dockerman-zh-cn"
-    echo "✅ 已选择docker : luci-i18n-dockerman-zh-cn"
-fi
-
 # ============= 3. 注入第三方扩展 =============
 source shell/apk-custom-packages.sh
 
@@ -44,7 +39,7 @@ PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perl
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
-# ============= 5. 下载晶晨宝盒 apk (原封不动) =============
+# ============= 5. 下载晶晨宝盒  =============
 echo "🔄 正在获取晶晨宝盒最新版本..."
 AMLOGIC_REPO="ophub/luci-app-amlogic"
 AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
