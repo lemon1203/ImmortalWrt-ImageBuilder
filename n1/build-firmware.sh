@@ -1,9 +1,23 @@
 #!/bin/bash
-# 斐讯 N1 (Amlogic S905D) 通用构建脚本
+# ==========================================
+# 斐讯 N1 (Amlogic S905D) 通用固件构建脚本
+# ==========================================
 
 LOGFILE="/tmp/uci-defaults-log.txt"
 echo "Starting N1 build at $(date)" >> $LOGFILE
 echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
+
+# 自动寻找 Makefile 所在的目录
+if [ ! -f "Makefile" ]; then
+    echo "⚠️ 当前目录没有 Makefile，正在寻找..."
+    cd /home/build/openwrt* 2>/dev/null || cd /home/build/immortalwrt 2>/dev/null || true
+fi
+
+if [ ! -f "Makefile" ]; then
+    echo "❌ 致命错误: 依然找不到 Makefile"
+    ls -la /home/build/
+    exit 1
+fi
 
 # ============= 1. 基础纯净包列表 =============
 PACKAGES=""
@@ -28,13 +42,13 @@ AMLOGIC_REPO="ophub/luci-app-amlogic"
 AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "$AMLOGIC_TAG" ]; then
-    echo "❌ 致命错误：无法从 GitHub API 获取版本号（可能被限流）。请重新运行一次任务。"
+    echo "❌ 致命错误：无法从 GitHub API 获取版本号（可能被限流）。"
     exit 1
 fi
 
 echo "✅ 获取到最新版本: ${AMLOGIC_TAG}"
 
-AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
+AMLOGIC_DIR="./extra-packages/amlogic"
 mkdir -p "$AMLOGIC_DIR"
 
 wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-app-amlogic-${AMLOGIC_TAG%-*}-r2.apk" -P "$AMLOGIC_DIR/" || \
@@ -55,7 +69,8 @@ sh shell/apk-prepare-packages.sh
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"
 
-make image PROFILE=$PROFILE PACKAGES="$PACKAGES" FILES="/home/build/immortalwrt/files" ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE
+# 【核心修复】：使用相对路径
+make image PROFILE=$PROFILE PACKAGES="$PACKAGES" FILES="./files" ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE
 
 if [ $? -ne 0 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Error: Build failed!"
