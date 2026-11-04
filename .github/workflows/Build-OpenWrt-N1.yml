@@ -1,4 +1,4 @@
-name: Build OpenWrt N1
+name: Build Official OpenWrt N1
 
 on:
   workflow_dispatch:
@@ -10,11 +10,20 @@ on:
         type: choice
         options:
           - 25.12.6
+          - 25.12.5
+          - 25.12.4
+          - 25.12.3
+          - 25.12.2
+          - 25.12.1
+          - 25.12.0
       openwrt_kernel:
-        description: "内核系列 (如 6.18.y)"
+        description: "内核系列 (双 LTS 任选)"
         required: false
         default: "6.18.y"
-        type: string
+        type: choice
+        options:
+          - 6.18.y
+          - 6.12.y
       packaging_tool:
         description: "打包工具 (Ophub / Flippy)"
         required: true
