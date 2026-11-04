@@ -67,16 +67,16 @@ jobs:
         run: |
           docker run --rm -i \
             --user root \
-            -v "${{ github.workspace }}/bin:/home/build/openwrt/bin" \
-            -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/openwrt/files/etc/uci-defaults" \
-            -v "${{ github.workspace }}/shell:/home/build/openwrt/shell" \
-            -v "${{ github.workspace }}/n1/banner:/home/build/openwrt/files/mnt/banner" \
-            -v "${{ github.workspace }}/n1/build-firmware.sh:/home/build/openwrt/build.sh" \
+            -v "${{ github.workspace }}/bin:/builder/bin" \
+            -v "${{ github.workspace }}/files/etc/uci-defaults:/builder/files/etc/uci-defaults" \
+            -v "${{ github.workspace }}/shell:/builder/shell" \
+            -v "${{ github.workspace }}/n1/banner:/builder/files/mnt/banner" \
+            -v "${{ github.workspace }}/n1/build-firmware.sh:/builder/build.sh" \
             -e PROFILE=generic \
             -e ROOTFS_PARTSIZE="1024" \
             -e INCLUDE_PASSWALL="${{ github.event.inputs.include_passwall }}" \
             -e INCLUDE_SMARTDNS="${{ github.event.inputs.include_smartdns }}" \
-            openwrt/imagebuilder:armsr-armv8-${{ github.event.inputs.luci_version }} /bin/bash /home/build/openwrt/build.sh
+            openwrt/imagebuilder:armsr-armv8-${{ github.event.inputs.luci_version }} /bin/bash /builder/build.sh
       
       - name: Find compiled rootfs
         id: find_rootfs
