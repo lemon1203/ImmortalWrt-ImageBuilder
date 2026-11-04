@@ -12,6 +12,7 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
 # ============= 1. 基础纯净包列表 =============
 PACKAGES=""
 PACKAGES="$PACKAGES curl fdisk unzip"
+PACKAGES="$PACKAGES luci-i18n-base-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-package-manager-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-firewall-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-ttyd-zh-cn"
