@@ -47,4 +47,8 @@ echo "root:password" | chpasswd
 /etc/init.d/network restart
 /etc/init.d/firewall restart
 
+# 强制设置 LuCI 网页界面默认语言为简体中文
+uci set luci.main.lang='zh_cn'
+uci commit luci
+
 exit 0
