@@ -63,6 +63,7 @@ jobs:
         run: |
           docker run --rm -i \
             --user root \
+            -w /home/build/immortalwrt \
             -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
             -v "${{ github.workspace }}/files/etc/uci-defaults:/home/build/immortalwrt/files/etc/uci-defaults" \
             -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
@@ -70,6 +71,7 @@ jobs:
             -v "${{ github.workspace }}/n1/build-firmware.sh:/home/build/immortalwrt/build.sh" \
             -e PROFILE=generic \
             -e ROOTFS_PARTSIZE="1024" \
+            -e TARGET_OS="ImmortalWrt" \
             -e INCLUDE_PASSWALL="${{ github.event.inputs.include_passwall }}" \
             -e INCLUDE_SMARTDNS="${{ github.event.inputs.include_smartdns }}" \
             immortalwrt/imagebuilder:armsr-armv8-openwrt-${{ github.event.inputs.luci_version }} /bin/bash /home/build/immortalwrt/build.sh
