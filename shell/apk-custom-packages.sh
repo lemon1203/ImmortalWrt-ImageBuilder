@@ -1,12 +1,11 @@
 #!/bin/bash
-# ============= N1 专属第三方插件库（官方源+稳定下载版） =============
+# ============= N1 专属第三方插件库（修复源不生效问题） =============
 
 # 基础架构
 ARCH="aarch64_generic"
 
 # 确保 APK 配置目录存在
 mkdir -p /home/build/immortalwrt/files/etc/apk/keys
-mkdir -p /home/build/immortalwrt/files/etc/apk/repositories.d
 
 # ==========================================
 # 1. PassWall 集成 (官方源)
@@ -17,11 +16,10 @@ if [ "$INCLUDE_PASSWALL" = "yes" ]; then
     wget -q -O /home/build/immortalwrt/files/etc/apk/keys/openwrt-passwall-build.pem \
       https://master.dl.sourceforge.net/project/openwrt-passwall-build/apk.pub
 
-    cat > /home/build/immortalwrt/files/etc/apk/repositories.d/passwall.list << EOF
-https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_luci/packages.adb
-https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_packages/packages.adb
-https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall2/packages.adb
-EOF
+    # 直接写入主 repositories 文件，不要写 repositories.d
+    echo "https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_luci/packages.adb" >> /home/build/immortalwrt/repositories
+    echo "https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall_packages/packages.adb" >> /home/build/immortalwrt/repositories
+    echo "https://master.dl.sourceforge.net/project/openwrt-passwall-build/releases/packages-25.12/${ARCH}/passwall2/packages.adb" >> /home/build/immortalwrt/repositories
 
     PACKAGES="$PACKAGES luci-app-passwall luci-i18n-passwall-zh-cn xray-core sing-box"
     PACKAGES="$PACKAGES kmod-nft-socket kmod-nft-tproxy kmod-nft-nat"
@@ -44,13 +42,10 @@ if [ "$INCLUDE_AURORA" = "yes" ]; then
     # 下载作者的公钥
     wget -q -O /home/build/immortalwrt/files/etc/apk/keys/eamonxg.pub https://openwrt.eamonxg.fun/public.key
 
-    # 写入 Feed 源
-    cat > /home/build/immortalwrt/files/etc/apk/repositories.d/eamonxg.list << EOF
-https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/luci
-https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/base
-EOF
+    # 直接写入主 repositories 文件
+    echo "https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/base" >> /home/build/immortalwrt/repositories
+    echo "https://openwrt.eamonxg.fun/releases/packages-25.12/${ARCH}/luci" >> /home/build/immortalwrt/repositories
 
-    # 加入包名列表
     PACKAGES="$PACKAGES luci-theme-aurora luci-app-aurora-config luci-i18n-aurora-config-zh-cn"
 fi
 
@@ -59,7 +54,6 @@ fi
 # ==========================================
 echo "🔄 正在获取晶晨宝盒最新版本..."
 AMLOGIC_REPO="ophub/luci-app-amlogic"
-# 提取 tag_name
 AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
 if [ -z "$AMLOGIC_TAG" ]; then
@@ -77,14 +71,10 @@ wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luc
 
 wget -q "https://github.com/${AMLOGIC_REPO}/releases/download/${AMLOGIC_TAG}/luci-i18n-amlogic-zh-cn-0.apk" -P "$AMLOGIC_DIR/"
 
-# 检查是否下载到主程序
 if ! ls "$AMLOGIC_DIR"/luci-app-amlogic-*.apk >/dev/null 2>&1; then
     echo "❌ 致命错误：晶晨宝盒主程序未能下载，停止构建。"
     exit 1
 fi
-
-echo "✅ 已下载的 apk 文件（原始名称）："
-ls -lh "$AMLOGIC_DIR"/*.apk
 
 # 追加宝盒相关的底层依赖
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
