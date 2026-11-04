@@ -115,7 +115,7 @@ jobs:
       # ================= 3. Flippy 打包 =================
       - name: Package with Flippy (Your Fork)
         if: ${{ github.event.inputs.packaging_tool == 'flippy' }}
-        uses: lemon1203/flippy-openwrt-actions@master
+        uses: lemon1203/flippy-openwrt-actions@main
         env:
           OPENWRT_ARMVIRT: ${{ steps.find_rootfs.outputs.file }}
           PACKAGE_SOC: s905d
