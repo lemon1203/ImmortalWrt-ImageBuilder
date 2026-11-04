@@ -1,8 +1,8 @@
 #!/bin/bash
-# 斐讯 N1 (Amlogic S905D) ImmortalWrt 25.12.x 旁路由构建脚本
+# 斐讯 N1 (Amlogic S905D) 通用构建脚本
 
 LOGFILE="/tmp/uci-defaults-log.txt"
-echo "Starting 25.12 N1 build at $(date)" >> $LOGFILE
+echo "Starting N1 build at $(date)" >> $LOGFILE
 echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
 
 # ============= 1. 基础纯净包列表 =============
@@ -14,46 +14,25 @@ PACKAGES="$PACKAGES luci-i18n-firewall-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-ttyd-zh-cn"
 PACKAGES="$PACKAGES openssh-sftp-server"
 
-# ============= 2. 剔除无线和拨号 =============
-if [ "$INCLUDE_PPPOE" = "no" ]; then
-    PACKAGES="$PACKAGES -ppp -ppp-mod-pppoe -luci-proto-ppp -kmod-ppp"
-fi
-
-if [ "$INCLUDE_WIRELESS" = "no" ]; then
-    PACKAGES="$PACKAGES -kmod-brcmfmac -wpad-basic-mbedtls -iw -iwinfo"
-    mkdir -p /home/build/immortalwrt/files/etc/uci-defaults
-    cat > /home/build/immortalwrt/files/etc/uci-defaults/99-remove-wireless << 'EOF'
-#!/bin/sh
-# 1. 删除无线配置文件
-rm -f /etc/config/wireless
-
-# 2. 把博通无线驱动加入黑名单，禁止内核加载它！
-mkdir -p /etc/modules.d
-echo "blacklist brcmfmac" > /etc/modules.d/blacklist-wifi
-echo "blacklist brcmutil" >> /etc/modules.d/blacklist-wifi
-
-exit 0
-EOF
-    chmod +x /home/build/immortalwrt/files/etc/uci-defaults/99-remove-wireless
-fi
-
-# ============= 3. 注入第三方扩展 =============
+# ============= 2. 注入第三方扩展 =============
 source shell/apk-custom-packages.sh
 
-# ============= 4. 晶晨宝盒及依赖 =============
+# ============= 3. 晶晨宝盒及依赖 =============
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
 
-# ============= 5. 下载晶晨宝盒  =============
+# ============= 4. 下载晶晨宝盒 =============
 echo "🔄 正在获取晶晨宝盒最新版本..."
 AMLOGIC_REPO="ophub/luci-app-amlogic"
 AMLOGIC_TAG=$(curl -s "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
 if [ -z "$AMLOGIC_TAG" ]; then
-    echo "⚠️ 无法获取最新版本，使用备用版本..."
-    AMLOGIC_TAG="26.10.2002-js"
+    echo "❌ 致命错误：无法从 GitHub API 获取版本号（可能被限流）。请重新运行一次任务。"
+    exit 1
 fi
-echo "✅ 晶晨宝盒版本: ${AMLOGIC_TAG}"
+
+echo "✅ 获取到最新版本: ${AMLOGIC_TAG}"
 
 AMLOGIC_DIR="/home/build/immortalwrt/extra-packages/amlogic"
 mkdir -p "$AMLOGIC_DIR"
@@ -69,10 +48,10 @@ if ! ls "$AMLOGIC_DIR"/luci-app-amlogic-*.apk >/dev/null 2>&1; then
 fi
 ls -lh "$AMLOGIC_DIR"/*.apk
 
-# ============= 6. 整理本地包 =============
+# ============= 5. 整理本地包 =============
 sh shell/apk-prepare-packages.sh
 
-# ============= 7. 构建镜像 =============
+# ============= 6. 构建镜像 =============
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
 echo "$PACKAGES"
 
