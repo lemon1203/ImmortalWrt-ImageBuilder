@@ -20,6 +20,7 @@ Fork 自 [wukongdaily/ImmortalWrt-ImageBuilder](https://github.com/wukongdaily/I
 | `luci_version` | 底包版本，对应 ImageBuilder 的镜像 tag（如 `25.12.6`） |
 | `openwrt_kernel` | 内核系列。**注意**：ophub 路线会把该板型支持的几套内核都打一遍，这里决定最终上传哪个系列 |
 | `packaging_tool` | `ophub`（晶晨宝盒路线，btrfs + 快照）或 `flippy` |
+| `kernel_usage` | 内核来源，**只对 `ophub` 打包生效**：`stable` = ophub 稳定内核，`flippy` = ophub 转存的 flippy 内核（主内核出怪问题时可以换这个试） |
 | `include_passwall` | 是否集成 PassWall（含 xray / sing-box 核心与源） |
 | `include_smartdns` | 是否集成 SmartDNS |
 | `dry_run` | 只构建、不上传 Release，用来测试参数 |
@@ -101,6 +102,19 @@ ophub 的 `remake` 在 `auto_kernel=true` 时会把该板型支持的整个内�
 **升级内核 / 底包后 kmod 会不会不匹配？**
 打包脚本会整体替换 `/lib/modules`，所以镜像里的内核模块以打包内核为准；
 ImageBuilder 阶段装的 `kmod-*` 只保证依赖关系完整。
+
+**文件名里的 `ophub` / `flippy` 是什么意思？**
+固件名按「发行版-底包版本-n1-**打包工具**-**内核来源**-内核版本-日期」拼，
+例如 `openwrt-25.12.6-n1-ophub-stable-k6.18.60-20261105.img.gz`：
+
+| 段 | 含义 |
+| --- | --- |
+| `ophub` / `flippy` | 用哪套打包脚本（不一定是内核作者） |
+| `stable` / `flippy` | 内核来源：`ophub/kernel` 的 `kernel_stable` / `kernel_flippy` |
+| `k6.18.60` | 实际打进去的内核版本 |
+| `20261105` | 构建日期 |
+
+flippy 打包路线的文件名是 `...-n1-flippy-k6.18.60-...`（内核固定来自 flippy）。
 
 ## 已知限制
 
