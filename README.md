@@ -105,7 +105,8 @@ ImageBuilder 阶段装的 `kmod-*` 只保证依赖关系完整。
 ## 已知限制
 
 - 固件未签名，下载后请用同名 `.sha256` 校验。
-- 没有无线硬件，`kmod-brcmfmac` / `wpad` 只有在插 USB 无线网卡时才有意义，
-  不需要的话可以在 `build-firmware.sh` 里注释掉那一行。
+- N1 的板载无线是可用的，只是性能比较一般（信号和速率别当主力 AP 使）：
+  固件默认带了 `kmod-brcmfmac` / `wpad-basic-mbedtls`。确定只用有线的话，
+  可以在 `build-firmware.sh` 里把那一行注释掉，省一点空间。
 - ophub 与 flippy 的产物格式不完全一样（如 btrfs 快照、分区布局），
   两种路线不要混着刷同一台机器的升级包。
