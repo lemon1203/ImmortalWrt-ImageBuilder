@@ -225,16 +225,37 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -t FOUND < <(
-            find "$GITHUB_WORKSPACE/bin/targets/armsr/armv8" -maxdepth 1 -type f -name '*rootfs.tar.gz' | sort
+          mapfile -t ALL < <(
+            find "$GITHUB_WORKSPACE/bin/targets/armsr/armv8" -maxdepth 1 -type f -name '*rootfs.tar.gz' | sort -V
           )
-          if [ "${#FOUND[@]}" -ne 1 ]; then
-            echo "::error::期望 1 个 rootfs.tar.gz，实际找到 ${#FOUND[@]} 个"
-            printf '%s\n' "${FOUND[@]}" || true
+
+          if [ "${#ALL[@]}" -eq 0 ]; then
+            echo "::error::没有生成 rootfs.tar.gz"
             exit 1
           fi
 
-          ABS="${FOUND[0]}"
+          # ImageBuilder 25.12 会同时产出两个，名字只差一段：
+          #   ...-generic-rootfs.tar.gz         <- 打包脚本要用的
+          #   ...-generic-targz-rootfs.tar.gz   <- 另一个变体，跳过
+          PRIMARY=()
+          for f in "${ALL[@]}"; do
+            case "$f" in
+              *targz*) ;;
+              *) PRIMARY+=("$f") ;;
+            esac
+          done
+
+          if [ "${#PRIMARY[@]}" -ge 1 ]; then
+            ABS="${PRIMARY[0]}"
+          else
+            ABS="${ALL[0]}"
+            echo "::warning::只找到 targz 变体，退而使用 ${ABS##*/}"
+          fi
+
+          echo "候选 rootfs（共 ${#ALL[@]} 个）："
+          printf '  - %s\n' "${ALL[@]##*/}"
+          echo "选用：${ABS##*/}"
+
           REL="$(realpath --relative-to="$GITHUB_WORKSPACE" "$ABS")"
           echo "abs=$ABS" >> "$GITHUB_OUTPUT"
           echo "rel=$REL" >> "$GITHUB_OUTPUT"
