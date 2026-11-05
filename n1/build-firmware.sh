@@ -57,8 +57,8 @@ PACKAGES="$PACKAGES openssh-sftp-server"
 # 时区由 99-custom.sh 写进 system.timezone（OpenWrt 会据此生成 /etc/TZ），
 # 不额外装 zoneinfo-*，避免不同底包里包名差异导致构建失败。
 
-# 无线网卡驱动：N1 本身没有无线硬件，只有插 USB 无线网卡时才需要。
-# 不用 USB 网卡的话，可以整段注释掉，能省一点空间、也少一层 wpad 冲突风险。
+# 无线网卡驱动：N1 的板载无线是可用的，只是性能一般，驱动默认保留。
+# 如果确定只用有线，可以整段注释掉，能省一点空间、也少一层 wpad 冲突风险。
 PACKAGES="$PACKAGES kmod-brcmfmac wpad-basic-mbedtls iw iwinfo"
 
 # ============= 2. 注入第三方扩展 =============
