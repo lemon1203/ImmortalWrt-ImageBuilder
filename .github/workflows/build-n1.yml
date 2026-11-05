@@ -1,0 +1,437 @@
+# ==========================================================================
+# 斐讯 N1（Amlogic S905D）固件构建 —— 可复用工作流
+#
+# 由 Build-OpenWrt-N1.yml / Build-ImmortalWrt-N1.yml 调用。
+# 两条路线（官方 OpenWrt / ImmortalWrt）共用这一份构建逻辑，
+# 以后只改这里，不会出现两份 YAML 越改越不像的问题。
+# 这是一个"内部"工作流：只有 workflow_call 触发方式，Actions 页面上
+# 没有 Run workflow 按钮，请从下面两个入口运行：
+#   Build OpenWrt N1      （官方 OpenWrt）
+#   Build ImmortalWrt N1  （ImmortalWrt）
+# ==========================================================================
+name: "[内部] Build N1 firmware"
+
+on:
+  workflow_call:
+    inputs:
+      distro:
+        description: "发行版：openwrt 或 immortalwrt"
+        required: true
+        type: string
+      version:
+        description: "ImageBuilder 底包版本，如 25.12.6"
+        required: true
+        type: string
+      kernel_series:
+        description: "内核系列，如 6.18.y"
+        required: true
+        type: string
+      packaging_tool:
+        description: "打包工具：ophub 或 flippy"
+        required: true
+        type: string
+      include_passwall:
+        description: "集成 PassWall：yes 或 no"
+        required: true
+        type: string
+      include_smartdns:
+        description: "集成 SmartDNS：yes 或 no"
+        required: true
+        type: string
+      release_tag:
+        description: "发布用的固定 tag"
+        required: true
+        type: string
+      release_name:
+        description: "Release 标题"
+        required: true
+        type: string
+      dry_run:
+        description: "true 时只构建、不上传 Release（调试用）"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ inputs.distro }} / ${{ inputs.packaging_tool }} / ${{ inputs.kernel_series }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      DISTRO: ${{ inputs.distro }}
+      VERSION: ${{ inputs.version }}
+      KERNEL_SERIES: ${{ inputs.kernel_series }}
+      PACKAGING_TOOL: ${{ inputs.packaging_tool }}
+      INCLUDE_PASSWALL: ${{ inputs.include_passwall }}
+      INCLUDE_SMARTDNS: ${{ inputs.include_smartdns }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      # ------------------------------------------------------------------
+      # 变量推导：镜像名、容器内工作目录、源分支（25.12.6 -> 25.12）
+      # ------------------------------------------------------------------
+      - name: 准备构建变量
+        run: |
+          set -euo pipefail
+
+          case "$DISTRO" in
+            openwrt)
+              TARGET_OS=OpenWrt
+              IMAGEBUILDER_IMAGE="openwrt/imagebuilder:armsr-armv8-${VERSION}"
+              CONTAINER_WORKDIR=/builder
+              HUB_REPO=openwrt/imagebuilder
+              TAG_FAMILY=armsr-armv8-
+              ;;
+            immortalwrt)
+              TARGET_OS=ImmortalWrt
+              IMAGEBUILDER_IMAGE="immortalwrt/imagebuilder:armsr-armv8-openwrt-${VERSION}"
+              CONTAINER_WORKDIR=/home/build/immortalwrt
+              HUB_REPO=immortalwrt/imagebuilder
+              TAG_FAMILY=armsr-armv8-openwrt-
+              ;;
+            *)
+              echo "::error::未知发行版 [ $DISTRO ]，只支持 openwrt / immortalwrt"
+              exit 1
+              ;;
+          esac
+
+          case "$PACKAGING_TOOL" in
+            ophub|flippy) ;;
+            *) echo "::error::未知打包工具 [ $PACKAGING_TOOL ]，只支持 ophub / flippy"; exit 1 ;;
+          esac
+
+          case "$INCLUDE_PASSWALL" in
+            yes|no) ;;
+            *) echo "::error::include_passwall 只能是 yes / no"; exit 1 ;;
+          esac
+
+          case "$INCLUDE_SMARTDNS" in
+            yes|no) ;;
+            *) echo "::error::include_smartdns 只能是 yes / no"; exit 1 ;;
+          esac
+
+          # 版本号必须是 x.y.z，否则无法推导 PassWall 源目录（packages-25.12）
+          FEED_SERIES="${VERSION%.*}"
+          case "$FEED_SERIES" in
+            [0-9]*.[0-9]*) ;;
+            *) echo "::error::版本号 [ $VERSION ] 不是 x.y.z 形式"; exit 1 ;;
+          esac
+
+          echo "TARGET_OS=$TARGET_OS" >> "$GITHUB_ENV"
+          echo "IMAGEBUILDER_IMAGE=$IMAGEBUILDER_IMAGE" >> "$GITHUB_ENV"
+          echo "CONTAINER_WORKDIR=$CONTAINER_WORKDIR" >> "$GITHUB_ENV"
+          echo "FEED_SERIES=$FEED_SERIES" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${GITHUB_SHA:0:7}" >> "$GITHUB_ENV"
+          # 两个发行版的可用版本天生不同步（官方 OpenWrt 到 25.12.6，ImmortalWrt 只到 25.12.2），
+          # 所以提交前先按 tag 前缀把「这个发行版实际有哪些版本」查出来
+          echo "HUB_REPO=$HUB_REPO" >> "$GITHUB_ENV"
+          echo "TAG_PREFIX=${TAG_FAMILY}${FEED_SERIES}" >> "$GITHUB_ENV"
+
+          {
+            echo ""
+            echo "## 构建参数"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 发行版 | ${DISTRO} ${VERSION} |"
+            echo "| 打包工具 | ${PACKAGING_TOOL} |"
+            echo "| 内核系列 | ${KERNEL_SERIES} |"
+            echo "| ImageBuilder | \`${IMAGEBUILDER_IMAGE}\` |"
+            echo "| PassWall / SmartDNS | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 预检（脚本语法 / 必需文件 / 镜像是否存在）
+        run: |
+          set -euo pipefail
+
+          bash -n n1/build-firmware.sh
+          bash -n shell/apk-custom-packages.sh
+          sh -n shell/apk-prepare-packages.sh
+          sh -n files/etc/uci-defaults/99-custom.sh
+
+          for f in files/etc/banner files/etc/uci-defaults/99-custom.sh n1/info.md; do
+            test -f "$f" || { echo "::error::缺少必需文件 $f"; exit 1; }
+          done
+
+          # 版本存在性校验：Docker Hub API 能直接列出「这个发行版到底发布了哪些版本」。
+          # 官方 OpenWrt 和 ImmortalWrt 的版本列表本来就不一样，选错了在这里就报清楚，
+          # 不用等到 docker pull 报 manifest unknown。
+          TAG_NAME="${IMAGEBUILDER_IMAGE##*:}"
+          HUB_URL="https://hub.docker.com/v2/repositories/${HUB_REPO}/tags?page_size=100&name=${TAG_PREFIX}"
+          if curl -fsSL --retry 2 --connect-timeout 15 --max-time 30 -o /tmp/hub-tags.json "$HUB_URL"; then
+            if grep -q "\"name\":\"${TAG_NAME}\"" /tmp/hub-tags.json; then
+              echo "底包镜像存在：${IMAGEBUILDER_IMAGE}"
+            else
+              AVAILABLE="$(grep -oE "\"name\":\"${TAG_PREFIX}\.[0-9]+\"" /tmp/hub-tags.json \
+                           | cut -d'"' -f4 \
+                           | sed -e "s/^${TAG_PREFIX}\./${FEED_SERIES}./" \
+                           | sort -V | tr '\n' ' ')"
+              echo "::error::${DISTRO} 目前没有 ${VERSION} 这个稳定版底包。该发行版可用版本：${AVAILABLE:-（查询为空，请手动检查 Docker Hub）}"
+              exit 1
+            fi
+          else
+            echo "::warning::无法查询 Docker Hub 标签列表（可能网络受限），跳过版本存在性校验"
+          fi
+
+          # 再兜一层：镜像 tag 写错时给一个能看懂的提示；限流导致的失败不阻断构建
+          if ! docker manifest inspect "$IMAGEBUILDER_IMAGE" >/dev/null 2>&1; then
+            echo "::warning::无法确认镜像 [ $IMAGEBUILDER_IMAGE ] 是否存在（可能是 Docker Hub 限流），继续尝试拉取"
+          fi
+
+      # ophub 会把两套内核都打一遍镜像，runner 的 ~14G 磁盘比较紧
+      - name: 清理磁盘空间
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          df -h /
+
+      # ------------------------------------------------------------------
+      # 1. 用 ImageBuilder 生成 rootfs.tar.gz
+      # ------------------------------------------------------------------
+      - name: 构建 rootfs
+        run: |
+          set -euo pipefail
+
+          docker pull "$IMAGEBUILDER_IMAGE"
+
+          docker run --rm \
+            --user root \
+            -w "$CONTAINER_WORKDIR" \
+            -v "${{ github.workspace }}/bin:${CONTAINER_WORKDIR}/bin" \
+            -v "${{ github.workspace }}/files:${CONTAINER_WORKDIR}/files" \
+            -v "${{ github.workspace }}/shell:${CONTAINER_WORKDIR}/shell" \
+            -v "${{ github.workspace }}/n1/build-firmware.sh:${CONTAINER_WORKDIR}/build.sh" \
+            -e PROFILE=generic \
+            -e ROOTFS_PARTSIZE=1024 \
+            -e TARGET_OS="$TARGET_OS" \
+            -e INCLUDE_PASSWALL="$INCLUDE_PASSWALL" \
+            -e INCLUDE_SMARTDNS="$INCLUDE_SMARTDNS" \
+            -e LUCI_VERSION="$VERSION" \
+            -e FEED_SERIES="$FEED_SERIES" \
+            -e GITHUB_TOKEN="${{ github.token }}" \
+            "$IMAGEBUILDER_IMAGE" \
+            /bin/bash "${CONTAINER_WORKDIR}/build.sh"
+
+      - name: 定位 rootfs
+        id: rootfs
+        run: |
+          set -euo pipefail
+
+          mapfile -t FOUND < <(
+            find "$GITHUB_WORKSPACE/bin/targets/armsr/armv8" -maxdepth 1 -type f -name '*rootfs.tar.gz' | sort
+          )
+          if [ "${#FOUND[@]}" -ne 1 ]; then
+            echo "::error::期望 1 个 rootfs.tar.gz，实际找到 ${#FOUND[@]} 个"
+            printf '%s\n' "${FOUND[@]}" || true
+            exit 1
+          fi
+
+          ABS="${FOUND[0]}"
+          REL="$(realpath --relative-to="$GITHUB_WORKSPACE" "$ABS")"
+          echo "abs=$ABS" >> "$GITHUB_OUTPUT"
+          echo "rel=$REL" >> "$GITHUB_OUTPUT"
+          ls -lh "$ABS"
+
+      # ------------------------------------------------------------------
+      # 2. 换内核、打包成可刷写的 img.gz
+      #
+      # 注意：ophub 的 remake 在 auto_kernel=true 时会把这个板型支持的
+      # 整个内核列表都打一遍（当前是 6.12.y + 6.18.y），显式传入的
+      # openwrt_kernel 在 auto_kernel=true 时是被忽略的。所以这里不再
+      # 假装能"只打某一个系列"，而是在下一步按所选系列筛选产物。
+      # ------------------------------------------------------------------
+      - name: 打包（ophub）
+        if: ${{ inputs.packaging_tool == 'ophub' }}
+        uses: ophub/amlogic-s9xxx-openwrt@main
+        with:
+          openwrt_path: ${{ steps.rootfs.outputs.abs }}
+          openwrt_board: s905d
+          openwrt_kernel: ${{ inputs.kernel_series }}
+          kernel_repo: ophub/kernel
+          kernel_usage: stable
+          auto_kernel: true
+          builder_name: lemon1203
+
+      # flippy 的脚本只接受相对于 workspace 的路径，不能传绝对路径
+      - name: 打包（flippy）
+        if: ${{ inputs.packaging_tool == 'flippy' }}
+        uses: lemon1203/flippy-openwrt-actions@main
+        env:
+          OPENWRT_ARMVIRT: ${{ steps.rootfs.outputs.rel }}
+          PACKAGE_SOC: s905d
+          KERNEL_VERSION_NAME: ${{ inputs.kernel_series }}
+          KERNEL_AUTO_LATEST: true
+          WHOAMI: lemon1203
+
+      # ------------------------------------------------------------------
+      # 3. 收集产物
+      # ------------------------------------------------------------------
+      - name: 收集打包产物
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PACKAGED_OUTPUTPATH:-}" ]; then
+            echo "::error::打包脚本没有输出 PACKAGED_OUTPUTPATH"
+            exit 1
+          fi
+
+          echo "打包目录: $PACKAGED_OUTPUTPATH"
+          ls -lh "$PACKAGED_OUTPUTPATH"
+
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          shopt -s nullglob
+          FILES=(
+            "$PACKAGED_OUTPUTPATH"/*.img.gz
+            "$PACKAGED_OUTPUTPATH"/*.img
+            "$PACKAGED_OUTPUTPATH"/*.sha
+            "$PACKAGED_OUTPUTPATH"/*.sha256
+          )
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "::error::打包目录里没有找到任何固件"
+            exit 1
+          fi
+          cp -v "${FILES[@]}" "$GITHUB_WORKSPACE/output/"
+
+      # ------------------------------------------------------------------
+      # 4. 按所选内核系列挑选 + 完整性校验 + 重命名 + 生成校验和
+      # ------------------------------------------------------------------
+      - name: 校验并重命名
+        id: finalize
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE/output"
+          shopt -s nullglob
+
+          declare -A IMG_BY_KERNEL=()
+          for f in *.img *.img.gz; do
+            if [[ "$f" =~ k([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              IMG_BY_KERNEL["${BASH_REMATCH[1]}"]="$f"
+            fi
+          done
+
+          if [ "${#IMG_BY_KERNEL[@]}" -eq 0 ]; then
+            echo "::error::无法从文件名中解析内核版本，产物：$(printf '%s ' *)"
+            exit 1
+          fi
+          echo "本次打包产出的内核：$(printf '%s ' "${!IMG_BY_KERNEL[@]}")"
+
+          # 6.18.y -> 6.18，同系列里取补丁号最大的那个
+          PREFIX="${KERNEL_SERIES%.y}"
+          BEST=""
+          while read -r v; do
+            if [[ "$v" == "${PREFIX}."* ]]; then
+              BEST="$v"
+            fi
+          done < <(printf '%s\n' "${!IMG_BY_KERNEL[@]}" | sort -V)
+
+          if [ -z "$BEST" ]; then
+            echo "::error::没有找到 ${KERNEL_SERIES} 系列的内核产物，实际产出：$(printf '%s ' "${!IMG_BY_KERNEL[@]}")"
+            exit 1
+          fi
+
+          SRC="${IMG_BY_KERNEL[$BEST]}"
+          if [[ "$SRC" != *.gz ]]; then
+            gzip -9 "$SRC"
+            SRC="${SRC}.gz"
+          fi
+
+          # 坏包/半包的廉价拦截：gzip 完整性 + 体积下限（纯无插件固件约 40-80MB）
+          gzip -t "$SRC"
+          SIZE="$(stat -c %s "$SRC")"
+          if [ "$SIZE" -lt 20971520 ]; then
+            echo "::error::$SRC 只有 $((SIZE / 1048576)) MB，疑似打包失败"
+            exit 1
+          fi
+
+          STEM="${DISTRO}-${VERSION}-n1-${PACKAGING_TOOL}-k${BEST}-$(date +%Y%m%d)"
+          OUT="${STEM}.img.gz"
+          [ "$SRC" = "$OUT" ] || mv -v "$SRC" "$OUT"
+
+          SUM="$(sha256sum "$OUT" | cut -d' ' -f1)"
+          printf '%s  %s\n' "$SUM" "$OUT" > "${OUT}.sha256"
+
+          {
+            echo "file=$OUT"
+            echo "kernel=$BEST"
+            echo "sha256=$SUM"
+            echo "size_mb=$((SIZE / 1048576))"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo ""
+            echo "## 构建完成：${DISTRO} ${VERSION}"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 发行版 | ${DISTRO} ${VERSION} |"
+            echo "| 打包工具 | ${PACKAGING_TOOL} |"
+            echo "| 内核 | ${BEST} |"
+            echo "| 大小 | $((SIZE / 1048576)) MB |"
+            echo "| SHA256 | \`${SUM}\` |"
+            echo ""
+            echo "产物：\`${OUT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 生成 Release 说明
+        run: |
+          set -euo pipefail
+
+          {
+            cat n1/info.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "### 本次构建"
+            echo ""
+            echo "| 项目 | 值 |"
+            echo "| --- | --- |"
+            echo "| 发行版 | ${DISTRO} ${VERSION} |"
+            echo "| 打包工具 | ${PACKAGING_TOOL} |"
+            echo "| 内核 | ${{ steps.finalize.outputs.kernel }} |"
+            echo "| 固件 | \`${{ steps.finalize.outputs.file }}\` |"
+            echo "| 大小 | ${{ steps.finalize.outputs.size_mb }} MB |"
+            echo "| SHA256 | \`${{ steps.finalize.outputs.sha256 }}\` |"
+            echo ""
+            echo "构建时间：$(date -u '+%Y-%m-%d %H:%M UTC')　提交：\`${SHORT_SHA}\`"
+            echo ""
+            echo "> 附件按 \`日期\` 命名，同一 Release 里会保留历史构建；"
+            echo "> 下载后请用同名的 \`.sha256\` 文件校验：\`sha256sum -c *.sha256\`"
+          } > release-notes.md
+
+          cat release-notes.md
+
+      # ------------------------------------------------------------------
+      # 5. 发布
+      # ------------------------------------------------------------------
+      - name: 发布到 Release
+        if: ${{ !inputs.dry_run }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          body_path: ${{ github.workspace }}/release-notes.md
+          files: |
+            ${{ github.workspace }}/output/${{ steps.finalize.outputs.file }}
+            ${{ github.workspace }}/output/${{ steps.finalize.outputs.file }}.sha256
+          fail_on_unmatched_files: true
+          overwrite_files: true
+
+      # ------------------------------------------------------------------
+      # 6. 兜底：Release 上传失败时，产物仍然留在 Actions 里可下载
+      # ------------------------------------------------------------------
+      - name: 上传构建产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.distro }}-${{ inputs.version }}-${{ inputs.packaging_tool }}-${{ inputs.kernel_series }}-${{ github.run_number }}
+          path: ${{ github.workspace }}/output/
+          if-no-files-found: warn
+          retention-days: 7
