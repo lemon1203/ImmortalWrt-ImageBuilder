@@ -1,0 +1,8 @@
+ ---------------------------------------------------------------
+   Phicomm N1 (Amlogic S905D) - custom OpenWrt build
+ ---------------------------------------------------------------
+   LuCI        : http://<this-device-ip>/   (DHCP client, check your router)
+   Login       : root / password
+   Install eMMC: System -> Amlogic Service -> Install OpenWrt
+   Build info  : appended below by the packaging script
+ ---------------------------------------------------------------
