@@ -34,6 +34,14 @@ on:
         options:
           - ophub
           - flippy
+      kernel_usage:
+        description: "内核来源 (仅 ophub 打包生效)：stable = ophub 稳定内核 / flippy = flippy 内核"
+        required: true
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - flippy
       include_passwall:
         description: "集成 PassWall (含核心与源)"
         required: true
@@ -71,6 +79,7 @@ jobs:
       version: ${{ inputs.luci_version }}
       kernel_series: ${{ inputs.openwrt_kernel }}
       packaging_tool: ${{ inputs.packaging_tool }}
+      kernel_usage: ${{ inputs.kernel_usage }}
       include_passwall: ${{ inputs.include_passwall }}
       include_smartdns: ${{ inputs.include_smartdns }}
       release_tag: phicomm-n1-immortalwrt

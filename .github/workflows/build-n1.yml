@@ -30,6 +30,11 @@ on:
         description: "打包工具：ophub 或 flippy"
         required: true
         type: string
+      kernel_usage:
+        description: "内核来源：stable（ophub 稳定内核）/ flippy（ophub 转存的 flippy 内核）。只对 ophub 打包路线生效"
+        required: false
+        type: string
+        default: "stable"
       include_passwall:
         description: "集成 PassWall：yes 或 no"
         required: true
@@ -65,6 +70,7 @@ jobs:
       VERSION: ${{ inputs.version }}
       KERNEL_SERIES: ${{ inputs.kernel_series }}
       PACKAGING_TOOL: ${{ inputs.packaging_tool }}
+      KERNEL_USAGE: ${{ inputs.kernel_usage }}
       INCLUDE_PASSWALL: ${{ inputs.include_passwall }}
       INCLUDE_SMARTDNS: ${{ inputs.include_smartdns }}
 
@@ -107,6 +113,16 @@ jobs:
             *) echo "::error::未知打包工具 [ $PACKAGING_TOOL ]，只支持 ophub / flippy"; exit 1 ;;
           esac
 
+          # 内核来源：stable / flippy 都是 ophub/kernel 里的 release tag，
+          # 只有 ophub 打包路线会用到；flippy 打包路线固定用 flippy 自己的内核。
+          case "$KERNEL_USAGE" in
+            stable|flippy) ;;
+            *) echo "::error::kernel_usage 只能是 stable / flippy"; exit 1 ;;
+          esac
+          if [ "$PACKAGING_TOOL" = "flippy" ] && [ "$KERNEL_USAGE" != "stable" ]; then
+            echo "::warning::flippy 打包路线固定使用 flippy 内核，kernel_usage=${KERNEL_USAGE} 不会生效"
+          fi
+
           case "$INCLUDE_PASSWALL" in
             yes|no) ;;
             *) echo "::error::include_passwall 只能是 yes / no"; exit 1 ;;
@@ -142,7 +158,7 @@ jobs:
             echo "| --- | --- |"
             echo "| 发行版 | ${DISTRO} ${VERSION} |"
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
-            echo "| 内核系列 | ${KERNEL_SERIES} |"
+            echo "| 内核 | ${KERNEL_SERIES} / ${KERNEL_USAGE} |"
             echo "| ImageBuilder | \`${IMAGEBUILDER_IMAGE}\` |"
             echo "| PassWall / SmartDNS | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -277,11 +293,15 @@ jobs:
           openwrt_board: s905d
           openwrt_kernel: ${{ inputs.kernel_series }}
           kernel_repo: ophub/kernel
-          kernel_usage: stable
+          # stable -> ophub/kernel 的 kernel_stable
+          # flippy -> ophub/kernel 的 kernel_flippy（ophub 转存的 flippy 内核）
+          kernel_usage: ${{ inputs.kernel_usage }}
           auto_kernel: true
           builder_name: lemon1203
 
-      # flippy 的脚本只接受相对于 workspace 的路径，不能传绝对路径
+      # flippy 的脚本只接受相对于 workspace 的路径，不能传绝对路径。
+      # 内核固定来自 flippy 自己的仓库（breakingbadboy/OpenWrt），
+      # kernel_usage 在这条路线上不生效（预检会提示）。
       - name: 打包（flippy）
         if: ${{ inputs.packaging_tool == 'flippy' }}
         uses: lemon1203/flippy-openwrt-actions@main
@@ -372,7 +392,18 @@ jobs:
             exit 1
           fi
 
-          STEM="${DISTRO}-${VERSION}-n1-${PACKAGING_TOOL}-k${BEST}-$(date +%Y%m%d)"
+          # 文件名里要能看出「谁打包 + 内核从哪来」，否则同版本同内核号的
+          # stable / flippy 两套内核会生成同名文件，后一次静默覆盖前一次
+          if [ "$PACKAGING_TOOL" = "ophub" ]; then
+            TOOL_TAG="ophub-${KERNEL_USAGE}"
+            KERNEL_SOURCE="ophub/kernel → kernel_${KERNEL_USAGE}"
+          else
+            TOOL_TAG="flippy"
+            KERNEL_SOURCE="breakingbadboy/OpenWrt（flippy 自己的内核）"
+          fi
+          echo "内核来源：${KERNEL_SOURCE}"
+
+          STEM="${DISTRO}-${VERSION}-n1-${TOOL_TAG}-k${BEST}-$(date +%Y%m%d)"
           OUT="${STEM}.img.gz"
           [ "$SRC" = "$OUT" ] || mv -v "$SRC" "$OUT"
 
@@ -382,6 +413,7 @@ jobs:
           {
             echo "file=$OUT"
             echo "kernel=$BEST"
+            echo "kernel_source=${KERNEL_SOURCE}"
             echo "sha256=$SUM"
             echo "size_mb=$((SIZE / 1048576))"
           } >> "$GITHUB_OUTPUT"
@@ -394,7 +426,8 @@ jobs:
             echo "| --- | --- |"
             echo "| 发行版 | ${DISTRO} ${VERSION} |"
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
-            echo "| 内核 | ${BEST} |"
+            echo "| 内核来源 | ${KERNEL_SOURCE} |"
+            echo "| 内核版本 | ${BEST} |"
             echo "| 大小 | $((SIZE / 1048576)) MB |"
             echo "| SHA256 | \`${SUM}\` |"
             echo ""
@@ -416,7 +449,8 @@ jobs:
             echo "| --- | --- |"
             echo "| 发行版 | ${DISTRO} ${VERSION} |"
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
-            echo "| 内核 | ${{ steps.finalize.outputs.kernel }} |"
+            echo "| 内核来源 | ${{ steps.finalize.outputs.kernel_source }} |"
+            echo "| 内核版本 | ${{ steps.finalize.outputs.kernel }} |"
             echo "| 固件 | \`${{ steps.finalize.outputs.file }}\` |"
             echo "| 大小 | ${{ steps.finalize.outputs.size_mb }} MB |"
             echo "| SHA256 | \`${{ steps.finalize.outputs.sha256 }}\` |"
