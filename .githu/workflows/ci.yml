@@ -1,0 +1,43 @@
+# ==========================================================================
+# 提交时的轻量检查：脚本语法 + GitHub Actions 工作流静态检查
+# 只做"能不能跑"的检查，不碰构建（构建在另外两个 workflow 里）
+# ==========================================================================
+name: CI
+
+on:
+  push:
+    paths:
+      - ".github/workflows/**"
+      - ".github/dependabot.yml"
+      - "shell/**"
+      - "n1/**"
+      - "files/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Shell 语法检查
+        run: |
+          set -euo pipefail
+          bash -n n1/build-firmware.sh
+          bash -n shell/apk-custom-packages.sh
+          sh -n shell/apk-prepare-packages.sh
+          sh -n files/etc/uci-defaults/99-custom.sh
+          echo "shell 语法检查通过"
+
+      - name: actionlint（只校验工作流语法/表达式）
+        uses: docker://rhysd/actionlint:latest
+        with:
+          args: -shellcheck= -color
