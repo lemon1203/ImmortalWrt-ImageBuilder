@@ -12,9 +12,9 @@ echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建arm64的rootfs.tar.gz"
 # ============= 1. 基础纯净包列表 =============
 PACKAGES=""
 PACKAGES="$PACKAGES curl fdisk unzip"
-PACKAGES="$PACKAGES luci"             
-PACKAGES="$PACKAGES uhttpd"       
-PACKAGES="$PACKAGES uhttpd-mod-ubus"  
+PACKAGES="$PACKAGES luci"          
+PACKAGES="$PACKAGES uhttpd" #官方Openwrt需要安装
+PACKAGES="$PACKAGES uhttpd-mod-ubus" #官方Openwrt需要安装
 PACKAGES="$PACKAGES luci-i18n-base-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-package-manager-zh-cn"
 PACKAGES="$PACKAGES luci-i18n-firewall-zh-cn"
@@ -31,6 +31,7 @@ source shell/apk-custom-packages.sh
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools fdisk lsblk parted"
 PACKAGES="$PACKAGES luci-app-amlogic luci-i18n-amlogic-zh-cn"
+PACKAGES="$PACKAGES block-mount btrfs-progs e2fsprogs kmod-usb-storage kmod-fs-ext4 kmod-fs-vfat" #官方Openwrt需要安装，否则无法刷入EMMC
 
 # ============= 4. 下载晶晨宝盒 =============
 echo "🔄 正在获取晶晨宝盒最新版本..."
