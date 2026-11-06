@@ -91,8 +91,9 @@ n1/
   info.md                   # 发布说明模板
 
 shell/
-  apk-custom-packages.sh    # PassWall / SmartDNS 源配置（被 build-firmware.sh source）
-  apk-aurora-theme.sh       # Aurora Release APK 下载、SHA256 校验和装包配置
+  apk-feeds.sh              # 需要第三方源和公钥的组件：PassWall、Honk
+  apk-official-packages.sh  # 官方源组件与依赖：SmartDNS、OpenClash 依赖
+  apk-downloads.sh          # 下载本地 APK：Aurora、OpenClash、晶晨宝盒
   apk-prepare-packages.sh   # 把 extra-packages 里的 .apk 整理到 ImageBuilder 的 packages/
 
 files/                      # 直接覆盖进 rootfs 的文件
