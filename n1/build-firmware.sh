@@ -13,6 +13,7 @@
 #   TARGET_OS          OpenWrt / ImmortalWrt
 #   INCLUDE_PASSWALL   yes / no
 #   INCLUDE_SMARTDNS   yes / no
+#   INCLUDE_HONK       yes / no
 #   THEME              default / aurora
 #   LUCI_VERSION       底包版本，如 25.12.6
 #   FEED_SERIES        PassWall 源分支，如 25.12
@@ -204,6 +205,11 @@ if [ "${INCLUDE_PASSWALL:-no}" = "yes" ]; then
 fi
 if [ "${INCLUDE_SMARTDNS:-no}" = "yes" ]; then
     check_soft 'etc/config/smartdns'
+fi
+if [ "${INCLUDE_HONK:-no}" = "yes" ]; then
+    check_hard 'etc/apk/repositories.d/daeuniverse.list'
+    check_soft 'etc/init.d/honk'
+    check_soft 'usr/share/luci/menu.d/luci-app-honk.json'
 fi
 if [ "$THEME" = "aurora" ]; then
     check_hard 'www/luci-static/aurora/main.css'
