@@ -73,3 +73,28 @@ if [ "${INCLUDE_SMARTDNS:-no}" = "yes" ]; then
         PACKAGES="$PACKAGES smartdns-ui"
     fi
 fi
+
+# ============= 3. Honk =============
+if [ "${INCLUDE_HONK:-no}" = "yes" ]; then
+    echo "配置 Honk 源：${FEED_SERIES}/${ARCH}"
+
+    mkdir -p files/etc/apk/keys files/etc/apk/repositories.d keys
+
+    HONK_KEY="files/etc/apk/keys/daeuniverse.pem"
+    rm -f "$HONK_KEY"
+    if ! fetch "https://openwrt.daeuniverse.org/public-key.pem" "$HONK_KEY"; then
+        echo "ERROR: Honk 公钥下载失败，构建中止" >&2
+        exit 1
+    fi
+    if ! grep -q 'BEGIN PUBLIC KEY' "$HONK_KEY"; then
+        echo "ERROR: Honk 公钥内容异常（软件源可能返回了错误页面）" >&2
+        exit 1
+    fi
+    cp -f "$HONK_KEY" keys/
+
+    HONK_REPO="@daeuniverse https://openwrt.daeuniverse.org/${FEED_SERIES}/packages/${ARCH}/packages.adb"
+    printf '%s\n' "$HONK_REPO" > files/etc/apk/repositories.d/daeuniverse.list
+    grep -qxF "$HONK_REPO" repositories 2>/dev/null || echo "$HONK_REPO" >> repositories
+
+    PACKAGES="$PACKAGES honk@daeuniverse luci-app-honk@daeuniverse luci-i18n-daeuniverse-zh-cn@daeuniverse"
+fi
