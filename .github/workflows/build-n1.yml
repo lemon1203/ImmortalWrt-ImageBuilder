@@ -43,6 +43,11 @@ on:
         description: "集成 SmartDNS：yes 或 no"
         required: true
         type: string
+      include_honk:
+        description: "集成 Honk：yes 或 no"
+        required: false
+        type: string
+        default: "no"
       disable_wifi:
         description: "关闭无线射频：yes（旁路由推荐，LuCI 更快）/ no"
         required: false
@@ -83,6 +88,7 @@ jobs:
       KERNEL_USAGE: ${{ inputs.kernel_usage }}
       INCLUDE_PASSWALL: ${{ inputs.include_passwall }}
       INCLUDE_SMARTDNS: ${{ inputs.include_smartdns }}
+      INCLUDE_HONK: ${{ inputs.include_honk }}
       DISABLE_WIFI: ${{ inputs.disable_wifi }}
       THEME: ${{ inputs.theme }}
 
@@ -145,6 +151,11 @@ jobs:
             *) echo "::error::include_smartdns 只能是 yes / no"; exit 1 ;;
           esac
 
+          case "$INCLUDE_HONK" in
+            yes|no) ;;
+            *) echo "::error::include_honk 只能是 yes / no"; exit 1 ;;
+          esac
+
           case "$DISABLE_WIFI" in
             yes|no) ;;
             *) echo "::error::disable_wifi 只能是 yes / no"; exit 1 ;;
@@ -182,7 +193,7 @@ jobs:
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
             echo "| 内核 | ${KERNEL_SERIES} / ${KERNEL_USAGE} |"
             echo "| ImageBuilder | \`${IMAGEBUILDER_IMAGE}\` |"
-            echo "| PassWall / SmartDNS | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} |"
+            echo "| PassWall / SmartDNS / Honk | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} / ${INCLUDE_HONK} |"
             echo "| 无线 | ${DISABLE_WIFI}（yes=射频禁用） |"
             echo "| LuCI 主题 | ${THEME} |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -255,6 +266,7 @@ jobs:
             -e TARGET_OS="$TARGET_OS" \
             -e INCLUDE_PASSWALL="$INCLUDE_PASSWALL" \
             -e INCLUDE_SMARTDNS="$INCLUDE_SMARTDNS" \
+            -e INCLUDE_HONK="$INCLUDE_HONK" \
             -e DISABLE_WIFI="$DISABLE_WIFI" \
             -e THEME="$THEME" \
             -e LUCI_VERSION="$VERSION" \
