@@ -14,6 +14,7 @@
 #   INCLUDE_PASSWALL   yes / no
 #   INCLUDE_SMARTDNS   yes / no
 #   INCLUDE_HONK       yes / no
+#   INCLUDE_OPENCLASH  yes / no
 #   THEME              default / aurora
 #   LUCI_VERSION       底包版本，如 25.12.6
 #   FEED_SERIES        PassWall 源分支，如 25.12
@@ -74,9 +75,6 @@ esac
 mkdir -p files/etc/n1-defaults
 printf '%s\n' "$DISABLE_WIFI" > files/etc/n1-defaults/disable-wifi
 
-# shellcheck source=/dev/null
-source shell/apk-custom-packages.sh
-
 # ============= 3. 晶晨宝盒及依赖 =============
 PACKAGES="$PACKAGES perlbase-base perlbase-file perlbase-time perlbase-utf8 perlbase-xsloader"
 PACKAGES="$PACKAGES bash jq pv uuidgen rpcd-mod-ucode dosfstools lsblk parted"
@@ -84,12 +82,6 @@ PACKAGES="$PACKAGES block-mount btrfs-progs e2fsprogs kmod-usb-storage kmod-fs-e
 # ↑ 官方 OpenWrt 需要这些依赖，否则无法写入 eMMC。
 #   注意：ophub/flippy 打包时会删掉 /lib/modules 换成自己的内核模块，
 #   所以 kmod-* 的实际文件以打包内核为准，这里主要保证 opkg/apk 层面的依赖完整。
-
-# ============= 4. 下载晶晨宝盒 =============
-AMLOGIC_REPO="ophub/luci-app-amlogic"
-AMLOGIC_DIR="./extra-packages/amlogic"
-rm -rf "$AMLOGIC_DIR"
-mkdir -p "$AMLOGIC_DIR"
 
 # 带 token 的 API 请求：未认证时 GitHub 只给 60 次/小时/IP，
 # 共享 runner 上很容易撞到 403，所以工作流会传 GITHUB_TOKEN 进来。
@@ -103,63 +95,18 @@ curl_gh() {
     fi
 }
 
+# 可选组件按安装来源拆分：第三方源、发行版官方源、本地下载 APK。
 # shellcheck source=/dev/null
-source shell/apk-aurora-theme.sh
+source shell/apk-feeds.sh
+# shellcheck source=/dev/null
+source shell/apk-official-packages.sh
+# shellcheck source=/dev/null
+source shell/apk-downloads.sh
 
-log "查询 ${AMLOGIC_REPO} 的最新 release ..."
-RESP="$(mktemp)"
-if ! curl_gh -o "$RESP" "https://api.github.com/repos/${AMLOGIC_REPO}/releases/latest"; then
-    die "无法访问 GitHub API（多半是未认证限流）。请确认工作流已传入 GITHUB_TOKEN。"
-fi
-
-# 从 API 响应里抽出所有 .apk 资产的下载地址（不猜版本号拼文件名）
-grep -oE '"browser_download_url":[[:space:]]*"[^"]+\.apk"' "$RESP" \
-    | cut -d'"' -f4 | sort -u > /tmp/amlogic-apk-urls.txt || true
-
-if [ ! -s /tmp/amlogic-apk-urls.txt ]; then
-    die "GitHub API 没有返回任何 .apk 资产（可能被限流，或 release 结构变了）。响应片段：$(head -c 200 "$RESP")"
-fi
-
-# 只取"主程序 + 中文语言包"两个，避免把同名的其它架构包一起塞进 packages/
-# 造成重复包。版本号本身从资产名里来，不用自己拼。
-pick_asset() {
-    { grep -E "$1" /tmp/amlogic-apk-urls.txt || true; } | sort -V | tail -n 1
-}
-
-MAIN_URL="$(pick_asset '/luci-app-amlogic-[^/]*\.apk$')"
-[ -n "$MAIN_URL" ] || die "release 里找不到 luci-app-amlogic 的 .apk 资产，请检查 ${AMLOGIC_REPO} 的产物命名"
-
-log "下载 $(basename "$MAIN_URL")"
-curl_gh -o "${AMLOGIC_DIR}/$(basename "$MAIN_URL")" "$MAIN_URL" || die "下载失败：${MAIN_URL}"
-
-I18N_URL="$(pick_asset '/luci-i18n-amlogic-zh-cn[^/]*\.apk$')"
-if [ -n "$I18N_URL" ]; then
-    log "下载 $(basename "$I18N_URL")"
-    curl_gh -o "${AMLOGIC_DIR}/$(basename "$I18N_URL")" "$I18N_URL" || die "下载失败：${I18N_URL}"
-fi
-
-# 防止把错误页面之类的小文件当成安装包
-find "$AMLOGIC_DIR" -type f -name '*.apk' -size -1k -delete
-
-shopt -s nullglob
-amlogic_apks=("${AMLOGIC_DIR}"/luci-app-amlogic-*.apk)
-if [ "${#amlogic_apks[@]}" -eq 0 ]; then
-    die "晶晨宝盒主程序没有下载成功"
-fi
-PACKAGES="$PACKAGES luci-app-amlogic"
-
-i18n_apks=("${AMLOGIC_DIR}"/luci-i18n-amlogic-zh-cn-*.apk)
-if [ "${#i18n_apks[@]}" -gt 0 ]; then
-    PACKAGES="$PACKAGES luci-i18n-amlogic-zh-cn"
-else
-    warn "release 里没有 luci-i18n-amlogic-zh-cn 的 apk，跳过中文语言包"
-fi
-ls -lh "$AMLOGIC_DIR"
-
-# ============= 5. 整理本地包 =============
+# ============= 4. 整理本地包 =============
 sh shell/apk-prepare-packages.sh
 
-# ============= 6. 构建镜像 =============
+# ============= 5. 构建镜像 =============
 log "开始 make image（profile=${PROFILE:-generic}，rootfs=${ROOTFS_PARTSIZE:-1024}MB）"
 log "软件包列表: ${PACKAGES}"
 
@@ -171,7 +118,7 @@ if ! make image \
     die "make image 失败"
 fi
 
-# ============= 7. 产物自检 =============
+# ============= 6. 产物自检 =============
 # 这一步专门用来抓"覆盖层没挂上""第三方包没装上"这类静默失败，
 # 比等用户刷完机再发现问题要便宜得多。
 ROOTFS="$(find bin/targets/armsr/armv8 -maxdepth 1 -type f -name '*rootfs.tar.gz' -print -quit 2>/dev/null || true)"
@@ -211,11 +158,14 @@ if [ "${INCLUDE_HONK:-no}" = "yes" ]; then
     check_soft 'etc/init.d/honk'
     check_soft 'usr/share/luci/menu.d/luci-app-honk.json'
 fi
+if [ "${INCLUDE_OPENCLASH:-no}" = "yes" ]; then
+    check_soft 'etc/init.d/openclash'
+    check_soft 'usr/share/luci/menu.d/luci-app-openclash.json'
+fi
 if [ "$THEME" = "aurora" ]; then
     check_hard 'www/luci-static/aurora/main.css'
     check_hard 'usr/share/luci/menu.d/luci-app-aurora.json'
     check_hard 'usr/lib/lua/luci/i18n/aurora-config.zh-cn.lmo'
 fi
 
-rm -f "$RESP"
 log "构建完成"
