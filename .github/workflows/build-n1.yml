@@ -48,6 +48,11 @@ on:
         required: false
         type: string
         default: "no"
+      include_openclash:
+        description: "集成 OpenClash：yes 或 no"
+        required: false
+        type: string
+        default: "no"
       disable_wifi:
         description: "关闭无线射频：yes（旁路由推荐，LuCI 更快）/ no"
         required: false
@@ -89,6 +94,7 @@ jobs:
       INCLUDE_PASSWALL: ${{ inputs.include_passwall }}
       INCLUDE_SMARTDNS: ${{ inputs.include_smartdns }}
       INCLUDE_HONK: ${{ inputs.include_honk }}
+      INCLUDE_OPENCLASH: ${{ inputs.include_openclash }}
       DISABLE_WIFI: ${{ inputs.disable_wifi }}
       THEME: ${{ inputs.theme }}
 
@@ -156,6 +162,11 @@ jobs:
             *) echo "::error::include_honk 只能是 yes / no"; exit 1 ;;
           esac
 
+          case "$INCLUDE_OPENCLASH" in
+            yes|no) ;;
+            *) echo "::error::include_openclash 只能是 yes / no"; exit 1 ;;
+          esac
+
           case "$DISABLE_WIFI" in
             yes|no) ;;
             *) echo "::error::disable_wifi 只能是 yes / no"; exit 1 ;;
@@ -193,7 +204,7 @@ jobs:
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
             echo "| 内核 | ${KERNEL_SERIES} / ${KERNEL_USAGE} |"
             echo "| ImageBuilder | \`${IMAGEBUILDER_IMAGE}\` |"
-            echo "| PassWall / SmartDNS / Honk | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} / ${INCLUDE_HONK} |"
+            echo "| PassWall / SmartDNS / Honk / OpenClash | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} / ${INCLUDE_HONK} / ${INCLUDE_OPENCLASH} |"
             echo "| 无线 | ${DISABLE_WIFI}（yes=射频禁用） |"
             echo "| LuCI 主题 | ${THEME} |"
           } >> "$GITHUB_STEP_SUMMARY"
@@ -203,8 +214,9 @@ jobs:
           set -euo pipefail
 
           bash -n n1/build-firmware.sh
-          bash -n shell/apk-custom-packages.sh
-          bash -n shell/apk-aurora-theme.sh
+          bash -n shell/apk-feeds.sh
+          bash -n shell/apk-official-packages.sh
+          bash -n shell/apk-downloads.sh
           sh -n shell/apk-prepare-packages.sh
           sh -n files/etc/uci-defaults/99-custom.sh
 
@@ -267,6 +279,7 @@ jobs:
             -e INCLUDE_PASSWALL="$INCLUDE_PASSWALL" \
             -e INCLUDE_SMARTDNS="$INCLUDE_SMARTDNS" \
             -e INCLUDE_HONK="$INCLUDE_HONK" \
+            -e INCLUDE_OPENCLASH="$INCLUDE_OPENCLASH" \
             -e DISABLE_WIFI="$DISABLE_WIFI" \
             -e THEME="$THEME" \
             -e LUCI_VERSION="$VERSION" \
