@@ -66,6 +66,14 @@ on:
         options:
           - "no"
           - "yes"
+      include_openclash:
+        description: "集成 OpenClash（不含 Mihomo 内核）"
+        required: true
+        default: "no"
+        type: choice
+        options:
+          - "no"
+          - "yes"
       disable_wifi:
         description: "关闭无线射频 (旁路由推荐，LuCI 更快；需要时可 SSH 开启)"
         required: true
@@ -107,6 +115,7 @@ jobs:
       include_passwall: ${{ inputs.include_passwall }}
       include_smartdns: ${{ inputs.include_smartdns }}
       include_honk: ${{ inputs.include_honk }}
+      include_openclash: ${{ inputs.include_openclash }}
       disable_wifi: ${{ inputs.disable_wifi }}
       theme: ${{ inputs.theme }}
       release_tag: phicomm-n1-immortalwrt
