@@ -43,6 +43,16 @@ on:
         description: "集成 SmartDNS：yes 或 no"
         required: true
         type: string
+      disable_wifi:
+        description: "关闭无线射频：yes（旁路由推荐，LuCI 更快）/ no"
+        required: false
+        type: string
+        default: "yes"
+      theme:
+        description: "LuCI 主题：default 或 aurora"
+        required: false
+        type: string
+        default: "default"
       release_tag:
         description: "发布用的固定 tag"
         required: true
@@ -73,6 +83,8 @@ jobs:
       KERNEL_USAGE: ${{ inputs.kernel_usage }}
       INCLUDE_PASSWALL: ${{ inputs.include_passwall }}
       INCLUDE_SMARTDNS: ${{ inputs.include_smartdns }}
+      DISABLE_WIFI: ${{ inputs.disable_wifi }}
+      THEME: ${{ inputs.theme }}
 
     steps:
       - name: Checkout
@@ -133,6 +145,16 @@ jobs:
             *) echo "::error::include_smartdns 只能是 yes / no"; exit 1 ;;
           esac
 
+          case "$DISABLE_WIFI" in
+            yes|no) ;;
+            *) echo "::error::disable_wifi 只能是 yes / no"; exit 1 ;;
+          esac
+
+          case "$THEME" in
+            default|aurora) ;;
+            *) echo "::error::theme 只能是 default / aurora"; exit 1 ;;
+          esac
+
           # 版本号必须是 x.y.z，否则无法推导 PassWall 源目录（packages-25.12）
           FEED_SERIES="${VERSION%.*}"
           case "$FEED_SERIES" in
@@ -161,6 +183,8 @@ jobs:
             echo "| 内核 | ${KERNEL_SERIES} / ${KERNEL_USAGE} |"
             echo "| ImageBuilder | \`${IMAGEBUILDER_IMAGE}\` |"
             echo "| PassWall / SmartDNS | ${INCLUDE_PASSWALL} / ${INCLUDE_SMARTDNS} |"
+            echo "| 无线 | ${DISABLE_WIFI}（yes=射频禁用） |"
+            echo "| LuCI 主题 | ${THEME} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 预检（脚本语法 / 必需文件 / 镜像是否存在）
@@ -169,6 +193,7 @@ jobs:
 
           bash -n n1/build-firmware.sh
           bash -n shell/apk-custom-packages.sh
+          bash -n shell/apk-aurora-theme.sh
           sh -n shell/apk-prepare-packages.sh
           sh -n files/etc/uci-defaults/99-custom.sh
 
@@ -230,6 +255,8 @@ jobs:
             -e TARGET_OS="$TARGET_OS" \
             -e INCLUDE_PASSWALL="$INCLUDE_PASSWALL" \
             -e INCLUDE_SMARTDNS="$INCLUDE_SMARTDNS" \
+            -e DISABLE_WIFI="$DISABLE_WIFI" \
+            -e THEME="$THEME" \
             -e LUCI_VERSION="$VERSION" \
             -e FEED_SERIES="$FEED_SERIES" \
             -e GITHUB_TOKEN="${{ github.token }}" \
@@ -403,7 +430,8 @@ jobs:
           fi
           echo "内核来源：${KERNEL_SOURCE}"
 
-          STEM="${DISTRO}-${VERSION}-n1-${TOOL_TAG}-k${BEST}-$(date +%Y%m%d)"
+          # 同一天同一参数可重复构建；run number 保证 Release 附件不会互相覆盖。
+          STEM="${DISTRO}-${VERSION}-n1-${TOOL_TAG}-k${BEST}-$(date +%Y%m%d)-r${GITHUB_RUN_NUMBER}"
           OUT="${STEM}.img.gz"
           [ "$SRC" = "$OUT" ] || mv -v "$SRC" "$OUT"
 
@@ -426,6 +454,7 @@ jobs:
             echo "| --- | --- |"
             echo "| 发行版 | ${DISTRO} ${VERSION} |"
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
+            echo "| LuCI 主题 | ${THEME} |"
             echo "| 内核来源 | ${KERNEL_SOURCE} |"
             echo "| 内核版本 | ${BEST} |"
             echo "| 大小 | $((SIZE / 1048576)) MB |"
@@ -449,6 +478,7 @@ jobs:
             echo "| --- | --- |"
             echo "| 发行版 | ${DISTRO} ${VERSION} |"
             echo "| 打包工具 | ${PACKAGING_TOOL} |"
+            echo "| LuCI 主题 | ${THEME} |"
             echo "| 内核来源 | ${{ steps.finalize.outputs.kernel_source }} |"
             echo "| 内核版本 | ${{ steps.finalize.outputs.kernel }} |"
             echo "| 固件 | \`${{ steps.finalize.outputs.file }}\` |"
@@ -457,7 +487,7 @@ jobs:
             echo ""
             echo "构建时间：$(date -u '+%Y-%m-%d %H:%M UTC')　提交：\`${SHORT_SHA}\`"
             echo ""
-            echo "> 附件按 \`日期\` 命名，同一 Release 里会保留历史构建；"
+            echo "> 附件按 \`日期 + GitHub 运行编号\` 命名，同一 Release 里会保留历史构建；"
             echo "> 下载后请用同名的 \`.sha256\` 文件校验：\`sha256sum -c *.sha256\`"
           } > release-notes.md
 

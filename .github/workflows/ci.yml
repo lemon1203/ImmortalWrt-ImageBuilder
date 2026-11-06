@@ -33,6 +33,7 @@ jobs:
           set -euo pipefail
           bash -n n1/build-firmware.sh
           bash -n shell/apk-custom-packages.sh
+          bash -n shell/apk-aurora-theme.sh
           sh -n shell/apk-prepare-packages.sh
           sh -n files/etc/uci-defaults/99-custom.sh
           echo "shell 语法检查通过"

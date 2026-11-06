@@ -62,6 +62,22 @@ on:
         options:
           - "yes"
           - "no"
+      disable_wifi:
+        description: "关闭无线射频 (旁路由推荐，LuCI 更快；需要时可 SSH 开启)"
+        required: true
+        default: "yes"
+        type: choice
+        options:
+          - "yes"
+          - "no"
+      theme:
+        description: "LuCI 主题 (aurora 会同时安装主题配置页和中文包)"
+        required: true
+        default: "default"
+        type: choice
+        options:
+          - default
+          - aurora
       dry_run:
         description: "只构建不上传 Release（调试用）"
         required: false
@@ -87,6 +103,8 @@ jobs:
       kernel_usage: ${{ inputs.kernel_usage }}
       include_passwall: ${{ inputs.include_passwall }}
       include_smartdns: ${{ inputs.include_smartdns }}
+      disable_wifi: ${{ inputs.disable_wifi }}
+      theme: ${{ inputs.theme }}
       release_tag: phicomm-n1-openwrt
       release_name: Official OpenWrt for Phicomm N1
       dry_run: ${{ inputs.dry_run }}
