@@ -13,6 +13,7 @@
 #   TARGET_OS          OpenWrt / ImmortalWrt
 #   INCLUDE_PASSWALL   yes / no
 #   INCLUDE_SMARTDNS   yes / no
+#   THEME              default / aurora
 #   LUCI_VERSION       底包版本，如 25.12.6
 #   FEED_SERIES        PassWall 源分支，如 25.12
 #   GITHUB_TOKEN       可选，用于 GitHub API 认证（避免 60 次/小时限流）
@@ -61,7 +62,17 @@ PACKAGES="$PACKAGES openssh-sftp-server"
 # 如果确定只用有线，可以整段注释掉，能省一点空间、也少一层 wpad 冲突风险。
 PACKAGES="$PACKAGES kmod-brcmfmac wpad-basic-mbedtls iw iwinfo"
 
-# ============= 2. 注入第三方扩展 =============
+# ============= 2. 写入首次启动参数 / 注入第三方扩展 =============
+# ImageBuilder 容器的环境变量不会带到设备首次启动；把无线开关作为
+# 只含 yes/no 的普通文件放进 rootfs，由 uci-defaults 脚本读取。
+DISABLE_WIFI="${DISABLE_WIFI:-yes}"
+case "$DISABLE_WIFI" in
+    yes|no) ;;
+    *) die "DISABLE_WIFI 只能是 yes / no" ;;
+esac
+mkdir -p files/etc/n1-defaults
+printf '%s\n' "$DISABLE_WIFI" > files/etc/n1-defaults/disable-wifi
+
 # shellcheck source=/dev/null
 source shell/apk-custom-packages.sh
 
@@ -90,6 +101,9 @@ curl_gh() {
         curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 20 "$@"
     fi
 }
+
+# shellcheck source=/dev/null
+source shell/apk-aurora-theme.sh
 
 log "查询 ${AMLOGIC_REPO} 的最新 release ..."
 RESP="$(mktemp)"
@@ -182,6 +196,7 @@ check_soft() {
 
 check_hard 'etc/uci-defaults/99-custom.sh'
 check_hard 'etc/banner'
+check_hard 'etc/n1-defaults/disable-wifi'
 
 if [ "${INCLUDE_PASSWALL:-no}" = "yes" ]; then
     check_hard 'etc/apk/repositories.d/customfeeds.list'
@@ -189,6 +204,11 @@ if [ "${INCLUDE_PASSWALL:-no}" = "yes" ]; then
 fi
 if [ "${INCLUDE_SMARTDNS:-no}" = "yes" ]; then
     check_soft 'etc/config/smartdns'
+fi
+if [ "$THEME" = "aurora" ]; then
+    check_hard 'www/luci-static/aurora/main.css'
+    check_hard 'usr/share/luci/menu.d/luci-app-aurora.json'
+    check_hard 'usr/lib/lua/luci/i18n/aurora-config.zh-cn.lmo'
 fi
 
 rm -f "$RESP"
